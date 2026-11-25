@@ -27,11 +27,29 @@ about SQLite; add `--disable-warning=ExperimentalWarning` to hide it.
 - Dependencies are on the left, dependents on the right. Arrows point from a
   declaration to what it depends on. Click a node to focus on it; the browser's
   back and forward buttons walk through what you visited.
+- Each node shows, at its right edge, how many declarations in Mathlib rest on it,
+  directly or through other results, with a bar under the name on a log scale. That
+  makes it visible when a theorem nobody cites (0) rests on a lemma that hundreds of
+  others need. The count is for the whole graph, whatever the filters. It is
+  computed by `build.js` (the dataset only has direct counts): exact up to 128,
+  an estimate within a few percent above that. The tooltip and the side panel give
+  the direct count as well.
+- **nodes show** picks what that number and bar measure: all uses (the default),
+  direct uses only, or PageRank. PageRank is shown as a multiple of the average
+  declaration's score ("0.2×", "620×"), since the raw values are tiny fractions.
+  The choice is remembered in the browser.
 - **explicit only** hides the dependencies Lean filled in by itself (typeclass
   instances and similar — about 74% of all edges). Dashed edges are those.
+- **hide Lean plumbing** (on by default) leaves out the logic and notation machinery
+  of Lean's core library, such as `Eq.mpr`, `propext`, `HAdd.hAdd` and `OfNat.ofNat`,
+  which nearly every proof touches. Core declarations about data (`Nat`, `Int`,
+  `List` …) and everything from Mathlib stay. The column header says how many
+  neighbours the filters hid.
+- **theorems only** keeps just the theorems and lemmas around the focus and hides
+  definitions, structures, instances and the rest. The focus itself is always shown.
 - **depth** shows 1–3 steps away. Each level shows the top 25/50/100
   declarations by PageRank; the column header says how many there are in total.
-- The side panel shows the focused declaration's Lean statement and docstring; a
+- The side panel shows the focused declaration's Lean statement; a
   panel below the graph shows its proof (or, for a definition, its body). The code
   is syntax-coloured, and each name that is one of the declaration's dependencies
   is underlined: click it to focus on that dependency, or hover it to pick out its
@@ -42,14 +60,28 @@ about SQLite; add `--disable-warning=ExperimentalWarning` to hide it.
   that line. Master is newer than the snapshot: moved files are followed through
   their deprecation shims, and declarations Lean generates automatically have
   no statement to show.
-- Above the Lean statement, the side panel shows it typeset as mathematics, with a
+- A band above the graph shows the declaration's docstring and its statement typeset as mathematics, with a
   "Copy LaTeX" button. This is a rule-based conversion that stays close to Lean's
   wording (hypotheses listed, then the conclusion); it is typeset with KaTeX,
   loaded from a CDN. Typeclass assumptions are put into words from a phrasebook
   (`public/lean-phrases.js`): `[Field K]` reads "K is a field". To teach it a new
   class, add one line to `PHRASES` there; classes it does not know keep their
   Lean name.
+- **notation** switches the typeset statement between International and
+  French / Belgian conventions: the angle ABC under a hat instead of ∠ABC, open
+  intervals as ]a, b[ instead of (a, b), and slanted ≤ ≥. The wording stays in
+  English. The choice is remembered in the browser.
 - Drag or scroll to move; pinch or ⌘/Ctrl-scroll to zoom.
+
+## A rule for the typeset statement
+
+The LaTeX rendering changes **notation, never the statement**. Powers, fractions,
+intervals, "x ∈ K", chained inequalities and the typeclass phrasebook are all
+different ways of writing exactly what Lean says. Replacing a statement by an
+equivalent one is not allowed, even when a textbook would prefer it: Mathlib's
+"the angle between x and y is π/2" is not rewritten as "x ⊥ y". That rewrite was
+tried on 2026-11-26 and removed the same day, because the page would then show a
+claim that is not the one Mathlib proves under that name.
 
 ## Known limitations
 
@@ -78,6 +110,7 @@ node --disable-warning=ExperimentalWarning --test
 | `build.js` | Downloads the CSVs and builds the database |
 | `lib/csv.js` | CSV reader |
 | `lib/graphdb.js` | Database build, name search, neighbourhood query |
+| `lib/reach.js` | Counts each declaration's direct and indirect dependents |
 | `server.js` | `/api/search`, `/api/node`, and the page |
 | `public/index.html` | The whole interface |
 | `public/lean.js` | Lean syntax colouring and dependency links |

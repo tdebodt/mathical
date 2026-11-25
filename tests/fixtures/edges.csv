@@ -39,3 +39,6 @@ L28,Hub,True,False
 L29,Hub,True,False
 L30,Hub,True,False
 Thm,Ghost,True,False
+Core,Eq.mpr,True,False
+Core,Nat.succ,True,False
+Core,axb,True,False

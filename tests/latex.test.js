@@ -130,7 +130,7 @@ test('chains: not merged when that would change or blur the meaning', () => {
 test('a variable of type `Set α` is a subset of α', () => {
   const lets = (stmt) => toLatex(stmt, 'n').parts.filter((p) => p.math && !p.display).map((p) => p.math);
   assert.deepEqual(lets('theorem t (s t : Set α) (u : Set (α × β)) (v : Set.Icc a b) (F : Set α → Prop) : True'), [
-    's, t \\subseteq \\alpha', 'u \\subseteq \\alpha \\times \\beta', 'v \\in \\mathrm{Set.Icc}\\,a\\,b', 'F : \\mathrm{Set}\\,\\alpha \\to \\mathrm{Prop}',
+    's, t \\subseteq \\alpha', 'u \\subseteq \\alpha \\times \\beta', 'v \\in \\left[a, b\\right]', 'F : \\mathrm{Set}\\,\\alpha \\to \\mathrm{Prop}',
   ]);
   assert.equal(expr('∀ s : Set α, ∃ t : Set (Set α), s ∈ t'), '\\forall s \\subseteq \\alpha,\\; \\exists t \\subseteq \\mathrm{Set}\\,\\alpha,\\; s \\in t');
   assert.equal(expr('∀ (s : Set ℝ) (x : ℝ), x ∈ s'), '\\forall \\left(s \\subseteq \\mathbb{R}\\right)\\,\\left(x \\in \\mathbb{R}\\right),\\; x \\in s');
@@ -147,7 +147,7 @@ test('several hypotheses are joined as prose, without their Lean names', () => {
 });
 
 test('expr: the angle symbol', () => {
-  assert.equal(expr('∠ p₁ p₂ p₃ = π / 2'), '\\angle p_{1}\\,p_{2}\\,p_{3} = \\pi / 2');
+  assert.equal(expr('∠ p₁ p₂ p₃ = π / 2'), '\\angle p_{1} p_{2} p_{3} = \\frac{\\pi}{2}');
 });
 
 test('powers: a factor multiplied by itself is written as a power', () => {
@@ -155,11 +155,11 @@ test('powers: a factor multiplied by itself is written as a power', () => {
     'd\\left(p_{1}, p_{3}\\right)^{2} = d\\left(p_{1}, p_{2}\\right)^{2} + d\\left(p_{3}, p_{2}\\right)^{2}');
   assert.equal(expr('x * x * x + 2 * y * y'), 'x^{3} + 2 \\cdot y^{2}');
   assert.equal(expr('(a + b) * (a + b)'), '\\left(a + b\\right)^{2}');
-  assert.equal(expr('‖x‖ * ‖x‖'), '\\| x \\| \\cdot \\| x \\|'); // not a plain factor: left as written
+  assert.equal(expr('‖x‖ * ‖x‖'), '\\| x \\|^{2}');
 });
 
 test('powers: not merged when precedence would make it wrong', () => {
-  assert.equal(expr('a / b * b'), 'a / b \\cdot b'); // (a / b) * b
+  assert.equal(expr('a / b * b'), '\\frac{a}{b} \\cdot b'); // (a / b) * b, not a / b²
   assert.equal(expr('b * b ^ 3'), 'b \\cdot b^{3}'); // b * (b ^ 3)
   assert.equal(expr('a ^ b * b'), 'a^{b} \\cdot b');
   assert.equal(expr('a * b'), 'a \\cdot b');
@@ -254,4 +254,98 @@ test('a binder named like a fact (with an underscore) is a hypothesis', () => {
 
 test('phrasebook: universe annotations on a class are ignored', () => {
   assert.equal(prose('theorem t {C : Type u} [Category.{v} C] (X : C) : X = X'), 'Let $C$ be a category. Let $X \\in C$. Then');
+});
+
+test('angles: three named points are set tightly, anything else gets brackets', () => {
+  assert.equal(expr('∠ A B C = π / 2'), '\\angle A B C = \\frac{\\pi}{2}');
+  assert.equal(expr('∡ p₁ p₂ p₃ = 0'), '\\measuredangle p_{1} p_{2} p_{3} = 0');
+  assert.equal(expr('∠ (midpoint ℝ a b) c d'), '\\angle\\left(\\mathrm{midpoint}\\,\\mathbb{R}\\,a\\,b, c, d\\right)');
+  assert.equal(expr('angle x y = π / 3'), '\\angle\\left(x, y\\right) = \\frac{\\pi}{3}');
+  assert.equal(expr('InnerProductGeometry.angle x (y - z) < π'), '\\angle\\left(x, y - z\\right) < \\pi');
+  assert.equal(expr('Continuous angle'), '\\mathrm{Continuous}\\,\\mathrm{angle}');
+});
+
+test('fractions: a division is typeset as a fraction when its two sides are clear', () => {
+  assert.equal(expr('(a + b) / (c - d)'), '\\frac{a + b}{c - d}');
+  assert.equal(expr('f x / y'), '\\frac{f\\,x}{y}');
+  assert.equal(expr('x / f y + 1'), '\\frac{x}{f\\,y} + 1');
+  assert.equal(expr('1 / 2 * x'), '\\frac{1}{2} \\cdot x');
+  assert.equal(expr('a / b / c'), '\\frac{\\frac{a}{b}}{c}');
+  assert.equal(expr('x ^ 2 / 2'), '\\frac{x^{2}}{2}');
+  assert.equal(expr('- a / b'), '- \\frac{a}{b}');
+  assert.equal(expr('a / b ^ 2'), 'a / b^{2}'); // the power belongs to b alone: left as written
+  assert.equal(expr('a / -b'), 'a / - b');
+});
+
+test('the Pythagorean theorem, end to end', () => {
+  const r = toLatex(
+    'theorem dist_sq_eq_dist_sq_add_dist_sq_iff_angle_eq_pi_div_two (p₁ p₂ p₃ : P) :\n    dist p₁ p₃ * dist p₁ p₃ = dist p₁ p₂ * dist p₁ p₂ + dist p₃ p₂ * dist p₃ p₂ ↔\n      ∠ p₁ p₂ p₃ = π / 2',
+    'EuclideanGeometry.dist_sq_eq_dist_sq_add_dist_sq_iff_angle_eq_pi_div_two',
+    '{V : Type*} {P : Type*} [NormedAddCommGroup V] [InnerProductSpace ℝ V] [MetricSpace P] [NormedAddTorsor V P]'
+  );
+  assert.equal(r.parts.at(-1).math,
+    '\\lvert p_{1} p_{3} \\rvert^{2} = \\lvert p_{1} p_{2} \\rvert^{2} + \\lvert p_{3} p_{2} \\rvert^{2} \\iff \\angle p_{1} p_{2} p_{3} = \\frac{\\pi}{2}');
+});
+
+test('intervals are written as intervals', () => {
+  assert.equal(expr('x ∈ Set.Icc a b'), 'x \\in \\left[a, b\\right]');
+  assert.equal(expr('x ∈ Set.Ioo 0 (f y)'), 'x \\in \\left(0, f\\,y\\right)');
+  assert.equal(expr('Ico a b ⊆ Ioc c d'), '\\left[a, b\\right) \\subseteq \\left(c, d\\right]');
+  assert.equal(expr('Set.Ioi 0 ∪ Set.Iic a'), '\\left(0, +\\infty\\right) \\cup \\left(-\\infty, a\\right]');
+  assert.equal(expr('Set.Ici a ∩ Set.Iio b'), '\\left[a, +\\infty\\right) \\cap \\left(-\\infty, b\\right)');
+  assert.equal(expr('Continuous Set.Icc'), '\\mathrm{Continuous}\\,\\mathrm{Set.Icc}'); // not applied to its bounds
+});
+
+test('French / Belgian notation: hat angles, outward brackets, slanted inequalities', () => {
+  const fr = { notation: 'fr' };
+  assert.equal(expr('∠ A B C = π / 2', fr), '\\widehat{A B C} = \\frac{\\pi}{2}');
+  assert.equal(expr('∠ (midpoint ℝ a b) c d', fr), '\\angle\\left(\\mathrm{midpoint}\\,\\mathbb{R}\\,a\\,b, c, d\\right)');
+  assert.equal(expr('x ∈ Set.Ioo a b', fr), 'x \\in \\left]a, b\\right[');
+  assert.equal(expr('Ico a b ⊆ Ioc c d', fr), '\\left[a, b\\right[ \\subseteq \\left]c, d\\right]');
+  assert.equal(expr('Set.Ioi 0 ∪ Set.Iic a', fr), '\\left]0, +\\infty\\right[ \\cup \\left]-\\infty, a\\right]');
+  assert.equal(expr('x ∈ Set.Icc a b', fr), 'x \\in \\left[a, b\\right]');
+  assert.equal(expr('0 ≤ x ∧ x < 1 ∨ y ≥ 2', fr), '0 \\leqslant x < 1 \\lor y \\geqslant 2');
+  // the option does not leak into later calls
+  assert.equal(expr('∠ A B C ≤ π'), '\\angle A B C \\le \\pi');
+  const pyth = toLatex('theorem t (p₁ p₂ p₃ : P) : dist p₁ p₃ = 0 ↔ ∠ p₁ p₂ p₃ = π / 2', 'EuclideanGeometry.t', '', fr);
+  assert.equal(pyth.parts.at(-1).math, '\\lvert p_{1} p_{3} \\rvert = 0 \\iff \\widehat{p_{1} p_{2} p_{3}} = \\frac{\\pi}{2}');
+  assert.match(pyth.source, /widehat/);
+  assert.doesNotMatch(toLatex('theorem t (p₁ p₂ p₃ : P) : ∠ p₁ p₂ p₃ = 0', 'EuclideanGeometry.t').source, /widehat/);
+});
+
+test('a declaration written with `lemma` is labelled a lemma', () => {
+  const l = toLatex('lemma foo (x : ℝ) : 0 ≤ x ^ 2', 'foo');
+  assert.equal(l.kind, 'Lemma');
+  assert.match(l.source, /^\\begin\{lemma\}\[\\texttt\{foo\}\]\n[\s\S]*\\end\{lemma\}$/);
+  assert.equal(l.parts.at(-1).math, '0 \\le x^{2}'); // the statement itself, not "foo : …"
+  assert.equal(toLatex('theorem foo (x : ℝ) : 0 ≤ x ^ 2', 'foo').kind, 'Theorem');
+  assert.equal(toLatex('protected lemma foo : 1 = 1', 'foo').kind, 'Lemma');
+});
+
+test('`variable (V)` only changes how V is passed: it does not introduce V again', () => {
+  const ctx = '{α V P W Q : Type*} [SeminormedAddCommGroup V] [PseudoMetricSpace P] [NormedAddTorsor V P] (V W)';
+  assert.equal(prose('theorem dist_eq_norm_vsub (x y : P) : dist x y = ‖x -ᵥ y‖', ctx),
+    'Let $V$ be a seminormed abelian group, and let $P$ be a normed affine space over $V$. Let $x, y \\in P$. Then');
+  // an untyped binder for a name nothing has introduced is still a variable
+  assert.equal(prose('theorem t (x) (y : ℝ) : x = y'), 'Let $x$, $y \\in \\mathbb{R}$. Then');
+});
+
+test('expr: torsor subtraction and addition are written as plain − and +', () => {
+  assert.equal(expr('dist x y = ‖x -ᵥ y‖'), 'd\\left(x, y\\right) = \\| x - y \\|');
+  assert.equal(expr('v +ᵥ p = q'), 'v + p = q');
+});
+
+test('norms are one term: they pair up, nest, and take powers', () => {
+  assert.equal(expr('‖x - y‖ * ‖x - y‖ = ‖x‖ * ‖x‖ + ‖y‖ * ‖y‖ ↔ angle x y = π / 2'),
+    '\\| x - y \\|^{2} = \\| x \\|^{2} + \\| y \\|^{2} \\iff \\angle\\left(x, y\\right) = \\frac{\\pi}{2}');
+  assert.equal(expr('‖f x‖ ≤ ‖f‖ * ‖x‖'), '\\| f\\,x \\| \\le \\| f \\| \\cdot \\| x \\|');
+  assert.equal(expr('‖‖x‖ • y‖ = ‖x‖ * ‖y‖'), '\\| \\| x \\| \\bullet y \\| = \\| x \\| \\cdot \\| y \\|');
+  assert.equal(expr('‖x‖ ^ 2 / ‖y‖'), '\\frac{\\| x \\|^{2}}{\\| y \\|}');
+  assert.equal(expr('‖x‖₊ ≤ 1'), '\\| x \\| ₊ \\le 1'); // unknown decoration: kept, not lost
+});
+
+test('the statement is never restated: an angle of π/2 stays an angle, not "orthogonal"', () => {
+  assert.equal(expr('angle x y = π / 2'), '\\angle\\left(x, y\\right) = \\frac{\\pi}{2}');
+  assert.equal(expr('inner x y = 0 ↔ angle x y = π / 2'), '\\mathrm{inner}\\,x\\,y = 0 \\iff \\angle\\left(x, y\\right) = \\frac{\\pi}{2}');
+  assert.doesNotMatch(expr('‖x - y‖ * ‖x - y‖ = ‖x‖ * ‖x‖ + ‖y‖ * ‖y‖ ↔ angle x y = π / 2'), /perp/);
 });

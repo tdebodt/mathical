@@ -1,4 +1,6 @@
-// Rule-based Lean 4 statement -> LaTeX. It follows Lean's wording closely: binders become
+// Rule-based Lean 4 statement -> LaTeX.
+// It changes notation, never the statement: what Lean writes as an angle stays an angle, even
+// where a textbook would say "orthogonal". An equivalent restatement is still a different claim. It follows Lean's wording closely: binders become
 // "Let … Assume …", the conclusion is typeset, and function application stays juxtaposition.
 // A heuristic, not an elaborator: it knows notation, not meaning.
 (function (root, factory) {
@@ -13,7 +15,7 @@
   const CLOSER = { '(': ')', '[': ']', '{': '}', '⟨': '⟩', '⦃': '⦄' };
   const CLOSERS = new Set(Object.values(CLOSER));
   // Longest first: tokens that must not be split.
-  const MULTI = ['ℝ≥0∞', 'ℝ≥0', 'Type*', 'Sort*', "⁻¹'", '⁻¹', '<->', ':=', '=>', '->', '<=', '>=', '..'];
+  const MULTI = ['ℝ≥0∞', 'ℝ≥0', 'Type*', 'Sort*', "⁻¹'", '⁻¹', '-ᵥ', '+ᵥ', '<->', ':=', '=>', '->', '<=', '>=', '..'];
   const SUPER = { '⁰': '0', '¹': '1', '²': '2', '³': '3', '⁴': '4', '⁵': '5', '⁶': '6', '⁷': '7', '⁸': '8', '⁹': '9', 'ⁿ': 'n', '⁺': '+', '⁻': '-' };
   const BIGOPS = { '∑': '\\sum', '∏': '\\prod', '⋃': '\\bigcup', '⋂': '\\bigcap', '⨆': '\\bigsqcup', '⨅': '\\bigsqcap' };
   // Symbols that stand for a value (an operand)…
@@ -29,6 +31,7 @@
     '≤': '\\le', '<=': '\\le', '≥': '\\ge', '>=': '\\ge', '≠': '\\ne', '≡': '\\equiv', '≈': '\\approx', '≃': '\\simeq', '≅': '\\cong', '∼': '\\sim',
     '∈': '\\in', '∉': '\\notin', '⊆': '\\subseteq', '⊂': '\\subset', '⊇': '\\supseteq', '⊃': '\\supset',
     '∪': '\\cup', '∩': '\\cap', '⊔': '\\sqcup', '⊓': '\\sqcap', '∖': '\\setminus', '\\': '\\setminus',
+    '-ᵥ': '-', '+ᵥ': '+', // difference of two points, and a vector added to a point
     '×': '\\times', '*': '\\cdot', '•': '\\bullet', '∘': '\\circ', '∣': '\\mid', '⊗': '\\otimes', '⊕': '\\oplus', '⋆': '\\star',
     '∠': '\\angle', '∡': '\\measuredangle', '∫': '\\int', '∂': '\\partial', '∇': '\\nabla', '‖': '\\|', '⌊': '\\lfloor', '⌋': '\\rfloor', '⌈': '\\lceil', '⌉': '\\rceil',
     ',': ',\\;', '%': '\\%', '#': '\\#', '&': '\\&', '$': '\\$', '~': '\\sim', '..': '\\ldots', '≪': '\\ll', '≫': '\\gg', '⁅': '[', '⁆': ']',
@@ -85,12 +88,23 @@
   }
 
   // Nests bracketed runs: returns a list of tokens and { t: 'group', open, items }.
+  // Norm bars ‖…‖ have no separate opening and closing sign: a bar closes the norm it is in
+  // when it follows something complete (a name, a number, a bracket), and opens one otherwise.
   function nest(tokens) {
+    try { return nestWith(tokens, true); } catch { return nestWith(tokens, false); } // bars that do not pair up stay as signs
+  }
+  function nestWith(tokens, pairNorms) {
     let i = 0;
+    const complete = (n) => !!n && (n.t === 'id' || n.t === 'num' || n.t === 'group' || n.t === 'sup' || (n.t === 'sym' && n.v in ATOMS));
     const seq = (closer) => {
       const items = [];
       while (i < tokens.length) {
         const tok = tokens[i++];
+        if (pairNorms && tok.t === 'sym' && tok.v === '‖') {
+          if (closer === '‖' && complete(items[items.length - 1])) return items;
+          items.push({ t: 'group', open: '‖', items: seq('‖') });
+          continue;
+        }
         if (tok.t === 'close') {
           if (tok.v !== closer) throw new Error('unbalanced brackets');
           return items;
@@ -185,6 +199,17 @@
   // Set while converting a statement from Euclidean geometry, where |AB| is the usual
   // way to write the distance between two named points.
   let geometry = false;
+  // Set while converting with French / Belgian conventions: the angle ABC under a hat,
+  // open interval ends as outward brackets, slanted ≤ and ≥.
+  let french = false;
+  const FRENCH_OPS = { '≤': '\\leqslant', '<=': '\\leqslant', '≥': '\\geqslant', '>=': '\\geqslant' };
+  // Interval constructors: [left bracket, right bracket] as [international, French] pairs,
+  // and which ends are bounded ('ab' both, 'a' left only, 'b' right only).
+  const INTERVALS = {
+    Icc: ['[', ']', 'ab'], Ico: ['[', ')', 'ab'], Ioc: ['(', ']', 'ab'], Ioo: ['(', ')', 'ab'],
+    Ici: ['[', ')', 'a'], Ioi: ['(', ')', 'a'], Iic: ['(', ']', 'b'], Iio: ['(', ')', 'b'],
+  };
+  const bracket = (b) => (!french ? b : b === '(' ? ']' : b === ')' ? '[' : b);
   const isName = (n) => n && n.t === 'id' && !n.v.includes('.');
 
   // `binder` is true while rendering the inside of a quantifier's "(x : T)".
@@ -192,7 +217,9 @@
     items = mergeChains(mergePowers(items));
     let quantified = false; // between a quantifier and its comma
     const out = []; // { s, atom }
-    const atom = (s) => out.push({ s, atom: true });
+    const atom = (s, bare) => out.push({ s, atom: true, bare }); // `bare`: the same thing without its own brackets
+    const isOperand = (n) => isTerm(n) || (!!n && n.t === 'sym' && n.v in ATOMS);
+    const POSTFIX = new Set(['^', '⁻¹', "⁻¹'", 'ᶜ']);
     const op = (s) => out.push({ s, atom: false });
     const join = (list) => list.map((e, k) => (k ? (list[k - 1].atom && e.atom ? '\\,' : ' ') : '') + e.s).join('').replace(/ ,\\;/g, ',\\;');
     // The operand of a prefix or postfix operator, without its own parentheses.
@@ -205,13 +232,44 @@
       if (!run.length) return atom('{}' + s);
       atom((run.length > 1 ? `\\left(${join(run)}\\right)` : run[0].s) + s);
     };
+    // `a / b` as a fraction. The numerator is the application just before the slash, the
+    // denominator the application just after; if a power follows, it belongs to the last
+    // factor only and the division is left as written. Returns the index of the last item
+    // used, or 0 when no fraction was made.
+    const fraction = (i) => {
+      let start = out.length;
+      while (start > 0 && out[start - 1].atom) start--;
+      let end = i + 1;
+      while (isOperand(items[end])) end++;
+      const after = items[end];
+      if (start === out.length || end === i + 1 || (after && (after.t === 'sup' || (after.t === 'sym' && POSTFIX.has(after.v))))) return 0;
+      const run = out.splice(start);
+      const top = run.length === 1 && run[0].bare !== undefined ? run[0].bare : join(run);
+      const bottom = end === i + 2 ? inner(items[i + 1]) : render(items.slice(i + 1, end));
+      atom(`\\frac{${top}}{${bottom}}`);
+      return end - 1;
+    };
+    let used = 0;
+    // `Set.Icc a b` as [a, b], and the other seven interval shapes. Returns the index of the
+    // last item used, or 0 when items[i] is not an interval applied to its bounds.
+    const interval = (i) => {
+      const shape = INTERVALS[items[i].v.replace(/^Set\./, '')];
+      if (!shape) return 0;
+      const count = shape[2].length;
+      if (![...Array(count)].every((_, k) => isTerm(items[i + 1 + k])) || isTerm(items[i + 1 + count])) return 0;
+      const a = shape[2].includes('a') ? inner(items[i + 1]) : '-\\infty';
+      const b = shape[2].includes('b') ? inner(items[i + count]) : '+\\infty';
+      atom(`\\left${bracket(shape[0])}${a}, ${b}\\right${bracket(shape[1])}`);
+      return i + count;
+    };
     for (let i = 0; i < items.length; i++) {
       const node = items[i];
       if (node.t === 'group') {
         const body = render(node.items, node.open === '{', quantified && node.open !== '⟨');
-        if (node.open === '(') atom(`\\left(${body}\\right)`);
+        if (node.open === '(') atom(`\\left(${body}\\right)`, body);
         else if (node.open === '[') atom(`\\left[${body}\\right]`);
         else if (node.open === '⟨') atom(`\\langle ${body} \\rangle`);
+        else if (node.open === '‖') atom(`\\| ${body} \\|`);
         else atom(`\\{ ${body} \\}`);
       } else if (node.t === 'num') atom(node.v);
       else if (node.t === 'sup') postfix(`^{${node.v}}`);
@@ -223,10 +281,22 @@
           if (geometry && isName(a) && isName(b)) atom(`\\lvert ${inner(a)} ${inner(b)} \\rvert`);
           else atom(`d\\left(${inner(a)}, ${inner(b)}\\right)`);
           i += 2;
+        } else if ((used = interval(i))) i = used;
+        else if ((node.v === 'angle' || node.v === 'InnerProductGeometry.angle') && isTerm(items[i + 1]) && isTerm(items[i + 2]) && !isTerm(items[i + 3])) {
+          atom(`\\angle\\left(${inner(items[i + 1])}, ${inner(items[i + 2])}\\right)`); // the angle between two vectors
+          i += 2;
         } else atom(ident(node.v));
       } else {
         const v = node.v;
-        if (v === '√') atom(`\\sqrt{${inner(items[++i])}}`);
+        if ((v === '∠' || v === '∡') && [1, 2, 3].every((k) => isTerm(items[i + k])) && !isTerm(items[i + 4])) {
+          // The angle at the middle point: "∠ABC" for named points, bracketed otherwise.
+          const points = items.slice(i + 1, i + 4);
+          if (!points.every(isName)) atom(`${OPS[v]}\\left(${points.map(inner).join(', ')}\\right)`);
+          else if (french && v === '∠') atom(`\\widehat{${points.map(inner).join(' ')}}`);
+          else atom(`${OPS[v]} ${points.map(inner).join(' ')}`);
+          i += 3;
+        } else if (v === '/' && (used = fraction(i))) i = used;
+        else if (v === '√') atom(`\\sqrt{${inner(items[++i])}}`);
         else if (v === '^') postfix(`^{${inner(items[++i])}}`);
         else if (v === '⁻¹' || v === "⁻¹'") postfix('^{-1}'); // inverse, and preimage `f ⁻¹' s`
         else if (v === 'ᶜ') postfix('^{c}');
@@ -250,7 +320,7 @@
         else if (v === '|' && inSet) op('\\mid');
         else if (v in ATOMS) atom(ATOMS[v]);
         else if (v in BIGOPS) op(BIGOPS[v]);
-        else if (v in OPS) op(OPS[v]);
+        else if (v in OPS) op((french && FRENCH_OPS[v]) || OPS[v]);
         else if (v === '{' || v === '}') op('\\' + v);
         else op(v);
       }
@@ -259,13 +329,15 @@
   }
 
   // One Lean expression as LaTeX math. Throws on unbalanced brackets.
-  function expr(src) {
-    return render(nest(lex(String(src))));
+  function expr(src, options) {
+    const before = french; // toLatex calls this too, and its choice of notation must survive
+    if (options) french = options.notation === 'fr';
+    try { return render(nest(lex(String(src)))); } finally { french = before; }
   }
 
   const RELATION = /[=≠≤<≥>∈∉⊆⊂↔∣∀∃¬∧∨≡]/;
   const NUMBER_SET = /^[ℕℤℚℝℂ]$/;
-  const KINDS = { theorem: 'Theorem', lemma: 'Theorem', axiom: 'Axiom', def: 'Definition', abbrev: 'Definition', opaque: 'Definition', instance: 'Instance' };
+  const KINDS = { theorem: 'Theorem', lemma: 'Lemma', axiom: 'Axiom', def: 'Definition', abbrev: 'Definition', opaque: 'Definition', instance: 'Instance' };
   const HEAD = /^(?:(?:private|protected|noncomputable|unsafe|partial|nonrec|public|scoped|local|meta)\s+)*(theorem|lemma|axiom|def|abbrev|opaque|instance)\b\s*(?:\(priority[^)]*\)\s*)?/;
 
   // Index of the first `ch` outside any brackets (and not part of `:=`), or -1.
@@ -367,7 +439,8 @@
   // Returns { kind, parts, source } or null when the statement is not one this can render.
   // `parts` alternate prose ({ text }) and formulas ({ math, display? }); `source` is LaTeX.
   // `context` is the binder text of the `variable` commands in scope, if known.
-  function toLatex(statement, fullName, context) {
+  function toLatex(statement, fullName, context, options) {
+    french = !!options && options.notation === 'fr';
     geometry = /^EuclideanGeometry\./.test(String(fullName || ''));
     try {
       let s = String(statement || '').replace(/\/--[\s\S]*?-\//g, '').trim();
@@ -388,6 +461,7 @@
 
       const vars = [], insts = [], hyps = [];
       const subjects = [], about = new Map(), typeVars = new Set(); // what the typeclasses talk about
+      const typed = new Set(); // names a binder has already given a type
       const subject = (name) => { if (!about.has(name)) { about.set(name, []); subjects.push(name); } return about.get(name); };
       if (bare) vars.push(bare.split(/\s+/).map(ident).join(', '));
       for (const b of [...inScope(context, s, binders), ...binders]) {
@@ -407,7 +481,14 @@
         const dflt = topLevel(type, ':=');
         if (dflt >= 0) type = type.slice(0, dflt); // drop a default value
         type = type.trim();
-        if (!type) { vars.push(names.map(ident).join(', ')); continue; }
+        if (!type) {
+          // `variable (V)` after `{V : Type*}` only makes V an explicit argument: nothing new to introduce.
+          const fresh = names.filter((n) => !typed.has(n));
+          if (fresh.length) vars.push(fresh.map(ident).join(', '));
+          fresh.forEach((n) => typed.add(n));
+          continue;
+        }
+        names.forEach((n) => typed.add(n));
         if (/^(Type|Sort)\b/.test(type)) { names.forEach((n) => { typeVars.add(n); subject(n); }); continue; }
         // Hypotheses are usually called h, hx, h₁ … or given a descriptive name such as f_mble.
         const named = names.every((n) => /^h[\p{L}\p{N}_'₀-₉]*$/u.test(n) || n.includes('_')) && !NUMBER_SET.test(type) && !/^Prop\b/.test(type);
@@ -466,10 +547,11 @@
         series(hyps, (h) => parts.push({ math: h }));
       }
       if (parts.length) text('. Then');
-      const shown = kind === 'Theorem' || kind === 'Axiom' ? expr(conclusion) : `${ident(name)} : ${expr(conclusion)}`;
+      const proposition = kind === 'Theorem' || kind === 'Lemma' || kind === 'Axiom'; // states a fact, as opposed to defining a thing
+      const shown = proposition ? expr(conclusion) : `${ident(name)} : ${expr(conclusion)}`;
       parts.push({ math: shown, display: true });
 
-      const env = kind === 'Theorem' || kind === 'Axiom' ? 'theorem' : 'definition';
+      const env = kind === 'Lemma' ? 'lemma' : proposition ? 'theorem' : 'definition';
       const prose = parts.slice(0, -1).map((p) => ('text' in p ? p.text : `$${p.math}$`)).join('');
       const source = [
         `\\begin{${env}}[\\texttt{${name.replace(/[_#%&${}]/g, (c) => '\\' + c)}}]`,
@@ -482,6 +564,7 @@
       return null;
     } finally {
       geometry = false;
+      french = false;
     }
   }
 

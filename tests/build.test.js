@@ -26,15 +26,15 @@ test('parseLine handles quoted commas and escaped quotes', () => {
 test('rows yields header-keyed objects', async () => {
   const out = [];
   for await (const r of rows(path.join(fixtures, 'edges.csv'))) out.push(r);
-  assert.equal(out.length, 40);
+  assert.equal(out.length, 43);
   assert.deepEqual({ ...out[0] }, { source: 'Thm', target: 'A', is_explicit: 'True', is_simplifier: 'False' });
 });
 
 test('loads nodes and edges', () => {
-  assert.equal(res.nodes, 41); // 40 in metrics + Ghost
-  assert.equal(res.edges, 39); // 40 rows minus the C→C self-loop
-  assert.equal(db.prepare('SELECT COUNT(*) c FROM nodes').get().c, 41);
-  assert.equal(db.prepare('SELECT COUNT(*) c FROM edges').get().c, 39);
+  assert.equal(res.nodes, 44); // 43 in metrics + Ghost
+  assert.equal(res.edges, 42); // 43 rows minus the C→C self-loop
+  assert.equal(db.prepare('SELECT COUNT(*) c FROM nodes').get().c, 44);
+  assert.equal(db.prepare('SELECT COUNT(*) c FROM edges').get().c, 42);
   assert.equal(edge('C', 'C'), undefined);
 });
 
@@ -62,7 +62,7 @@ test('rebuilding replaces an existing database', async () => {
     metricsCsv: path.join(fixtures, 'metrics.csv'),
     dbPath,
   });
-  assert.equal(again.edges, 39);
+  assert.equal(again.edges, 42);
   assert.equal(fs.existsSync(dbPath + '.tmp'), false);
-  assert.equal(open(dbPath).prepare('SELECT COUNT(*) c FROM nodes').get().c, 41);
+  assert.equal(open(dbPath).prepare('SELECT COUNT(*) c FROM nodes').get().c, 44);
 });

@@ -33,6 +33,9 @@
   header { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; padding: 10px 16px;
            background: var(--surface); border-bottom: 1px solid var(--line); }
   h1 { font-size: 15px; margin: 0; font-weight: 650; letter-spacing: .01em; white-space: nowrap; }
+  h1 a { color: inherit; text-decoration: none; border-radius: 4px; }
+  h1 a:hover { color: var(--accent); }
+  h1 a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
   .search { position: relative; flex: 1 1 320px; max-width: 560px; }
   .search input { width: 100%; padding: 7px 10px; font: 13px var(--mono); color: var(--text);
                   background: var(--bg); border: 1px solid var(--line); border-radius: 7px; }
@@ -55,10 +58,13 @@
   button, select { font: inherit; font-size: 13px; color: var(--text); background: var(--surface);
                    border: 1px solid var(--line); border-radius: 7px; padding: 4px 10px; cursor: pointer; }
   button[aria-pressed="true"] { background: var(--accent); color: #fff; }
-  main { display: grid; grid-template-columns: 1fr clamp(320px, 30vw, 460px); grid-template-rows: minmax(0, 1fr) auto; min-height: 0; }
-  #stage { grid-column: 1; grid-row: 1; }
-  aside { grid-column: 2; grid-row: 1 / span 2; }
-  #proof { grid-column: 1; grid-row: 2; min-width: 0; display: flex; flex-direction: column; max-height: 38vh;
+  main { display: grid; grid-template-columns: 1fr clamp(320px, 30vw, 460px); grid-template-rows: auto minmax(0, 1fr) auto; min-height: 0; }
+  #theorem { grid-column: 1; grid-row: 1; min-width: 0; max-height: 34vh; overflow-y: auto; display: flex; align-items: flex-start; gap: 16px;
+             padding: 12px 16px; background: var(--surface); border-bottom: 1px solid var(--line); }
+  #theorem[hidden] { display: none; }
+  #stage { grid-column: 1; grid-row: 2; }
+  aside { grid-column: 2; grid-row: 1 / span 3; }
+  #proof { grid-column: 1; grid-row: 3; min-width: 0; display: flex; flex-direction: column; max-height: 38vh;
            background: var(--surface); border-top: 1px solid var(--line); }
   #proof[hidden] { display: none; }
   #proof header { padding: 8px 16px; gap: 10px; border-bottom: 1px solid var(--line); flex-wrap: nowrap; }
@@ -85,6 +91,12 @@
   .node { cursor: pointer; }
   .node rect { fill: var(--pill); stroke: var(--pill-line); stroke-width: 1; }
   .node text { font: 12px var(--mono); fill: var(--text); dominant-baseline: central; }
+  .node text.count { font-size: 10.5px; fill: var(--muted); text-anchor: end; }
+  .node text.count.zero { opacity: .55; }
+  .node rect.usage { fill: var(--accent) !important; stroke: none !important; opacity: .6; }
+  .node.focus text.count { font-weight: 400; }
+  .node.pick text.count { fill: #fff; } .node.pick rect.usage { fill: #fff !important; opacity: .9; }
+  .legend .bar { width: 22px; height: 3px; border-radius: 2px; background: var(--accent); opacity: .6; }
   .node:hover rect, .node.hl rect, .node:focus-visible rect { stroke: var(--accent); stroke-width: 1.6; }
   .node:focus { outline: none; }
   .node.focus { cursor: default; }
@@ -118,31 +130,34 @@
   aside h3 { font: 600 12px var(--sans); color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin: 16px 0 6px; }
   aside pre { margin: 0; padding: 10px 12px; font: 12px/1.5 var(--mono); background: var(--bg); border: 1px solid var(--line);
               border-radius: 8px; white-space: pre; overflow-x: auto; tab-size: 2; }
-  aside .doc { margin: 0 0 8px; font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  #theorem .main { flex: 1; min-width: 0; }
+  #theorem .doc { margin: 0 0 6px; font-size: 13.5px; color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; }
+  #theorem .doc strong { color: var(--text); }
+  #theorem .doc code { font: 12.5px var(--mono); }
   code .kw { color: var(--c-kw); font-weight: 600; } code .tac { color: var(--c-tac); }
   code .comment { color: var(--c-comment); font-style: italic; } code .str { color: var(--c-str); }
   code .num { color: var(--c-num); } code .attr { color: var(--c-attr); } code .warn { color: var(--c-warn); font-weight: 600; }
   code a.dep { color: inherit; text-decoration: underline; text-decoration-color: var(--accent); text-decoration-thickness: 1.5px;
                text-underline-offset: 3px; border-radius: 3px; cursor: pointer; }
   code a.dep:hover, code a.dep:focus-visible { background: var(--focus-bg); color: var(--accent); outline: none; }
-  aside .tex { margin: 0 0 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; font-size: 14px; line-height: 1.7; }
-  aside .tex .display { display: block; overflow-x: auto; overflow-y: hidden; padding: 6px 0 2px; }
-  aside .tex .katex-display { margin: 0; }
-  aside .tex .kind { display: inline; font-weight: 650; color: var(--text); margin: 0; }
-  aside .tex button { display: block; margin-top: 8px; font-size: 12px; padding: 2px 8px; }
+  .tex { font-size: 15px; line-height: 1.7; }
+  .tex .display { display: block; overflow-x: auto; overflow-y: hidden; padding: 8px 0 2px; }
+  .tex .katex-display { margin: 0; }
+  .tex .kind { font-weight: 650; }
+  #theorem button { flex: none; font-size: 12px; padding: 3px 9px; white-space: nowrap; }
   aside p.note { color: var(--muted); font-size: 12.5px; }
   aside .linklike { border: 0; padding: 0; background: none; color: var(--accent); font: 12px var(--mono);
                     text-decoration: underline; text-align: left; overflow-wrap: anywhere; }
   @media (max-width: 860px) {
     body { overflow: auto; }
-    main { grid-template-columns: 1fr; grid-template-rows: 62vh auto auto; }
-    aside { grid-column: 1; grid-row: 3; border-left: 0; border-top: 1px solid var(--line); }
+    main { grid-template-columns: 1fr; grid-template-rows: auto 62vh auto auto; }
+    aside { grid-column: 1; grid-row: 4; border-left: 0; border-top: 1px solid var(--line); }
   }
 </style>
 </head>
 <body>
 <header>
-  <h1>Mathlib graph navigator</h1>
+  <h1><a href="/" id="home" title="Back to the starting theorem">Mathlib graph navigator</a></h1>
   <div class="search">
     <input id="q" type="search" placeholder="Search a theorem, lemma or definition…  ( / )" autocomplete="off"
            spellcheck="false" aria-label="Search declarations" aria-controls="results">
@@ -151,6 +166,10 @@
   <div class="controls">
     <label title="Hide the dependencies Lean filled in by itself (typeclass instances and similar)">
       <input id="explicit" type="checkbox" checked> explicit only</label>
+    <label title="Hide the logic and notation machinery of Lean's core library (Eq.mpr, propext, HAdd.hAdd, OfNat.ofNat …), which nearly every proof touches">
+      <input id="plumbing" type="checkbox" checked> hide Lean plumbing</label>
+    <label title="Show only theorems and lemmas around the focus; hide definitions, structures, instances and the rest">
+      <input id="theorems" type="checkbox"> theorems only</label>
     <span class="group">depth
       <span class="seg" id="depth" role="group" aria-label="Depth">
         <button type="button" data-v="1">1</button><button type="button" data-v="2">2</button><button type="button" data-v="3">3</button>
@@ -158,9 +177,18 @@
     </span>
     <label>show up to
       <select id="limit"><option>25</option><option>50</option><option>100</option></select> per level</label>
+    <label title="What the number and bar on each node measure">nodes show
+      <select id="metric">
+        <option value="reach">all uses</option>
+        <option value="direct">direct uses</option>
+        <option value="pagerank">PageRank</option>
+      </select></label>
+    <label title="Conventions for the typeset statement: French / Belgian writes the angle ABC under a hat, open intervals as ]a, b[, and slanted ≤ ≥">notation
+      <select id="notation"><option value="intl">International</option><option value="fr">French / Belgian</option></select></label>
   </div>
 </header>
 <main>
+  <section id="theorem" aria-label="Statement" hidden></section>
   <div id="stage">
     <svg id="svg" role="img" aria-label="Dependency graph">
       <defs>
@@ -213,7 +241,51 @@ const KINDS = ['theorem', 'definition', 'abbrev', 'inductive', 'constructor', 'o
 const kindColor = (k) => `var(--k-${KINDS.includes(k) ? k : 'unknown'})`;
 const EXAMPLES = ['Nat.add_comm', 'Real.sqrt_nonneg', 'Commute.exp_right'];
 
-const NODE_W = 236, NODE_H = 26, ROW = 32, COL = 330, MAX_CHARS = 29;
+const NODE_W = 276, NODE_H = 26, ROW = 32, COL = 370, MAX_CHARS = 29;
+// A count short enough to fit in a node: 183, 1.7k, 70k.
+const compact = (n) => (n < 1000 ? String(n) : n < 10000 ? (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k' : Math.round(n / 1000) + 'k');
+// The same count as a share of the node's width, on a log scale: the foundations of Mathlib
+// have about 260,000 dependents, a typical lemma a handful.
+const usageShare = (n) => Math.min(1, Math.log10(n + 1) / Math.log10(260000));
+// PageRank as a multiple of the average score (1 / number of declarations): "0.2×", "620×".
+const AVERAGE_RANK = 1 / 308129;
+const timesAverage = (pr) => {
+  const x = Number(pr) / AVERAGE_RANK;
+  return (x >= 100 ? compact(Math.round(x)) : x >= 10 ? x.toFixed(0) : x >= 1 ? x.toFixed(1) : x.toFixed(2)) + '×';
+};
+// What a node's number and bar can measure. `share` is the bar length, 0 to 1, on a log scale.
+const METRICS = {
+  reach: {
+    legend: 'used by how many declarations, directly or indirectly',
+    of: (n) => ({ label: compact(usedBy(n)), share: usageShare(usedBy(n)), zero: !usedBy(n) }),
+  },
+  direct: {
+    legend: 'used directly by how many declarations',
+    of: (n) => ({ label: compact(n.in_degree), share: Math.min(1, Math.log10(n.in_degree + 1) / Math.log10(90000)), zero: !n.in_degree }),
+  },
+  pagerank: {
+    legend: 'PageRank, as a multiple of the average declaration',
+    // The scale runs from a tenth of the average to about 5,000 times it, the highest in Mathlib.
+    of: (n) => {
+      const x = Number(n.pagerank) / AVERAGE_RANK;
+      return { label: timesAverage(n.pagerank), share: Math.max(0, Math.min(1, (Math.log10(x) + 1) / (Math.log10(5000) + 1))), zero: false };
+    },
+  },
+};
+// Which measure the nodes show; a reader's preference, kept in this browser.
+let chosenMetric = null; // set when picked on this page, so the choice holds even if it cannot be saved
+function metric() {
+  if (chosenMetric) return chosenMetric;
+  try { const m = localStorage.getItem('metric'); return Object.hasOwn(METRICS, m) ? m : 'reach'; } catch { return 'reach'; }
+}
+
+// How many declarations rest on this one, directly or through others. Databases built before
+// that count existed only have the direct one.
+const usedBy = (n) => n.reach ?? n.in_degree;
+const usedByText = (n) => n.reach === null || n.reach === undefined
+  ? `used by ${fmt(n.in_degree)} declaration${n.in_degree === 1 ? '' : 's'}`
+  : n.reach === 0 ? 'nothing in Mathlib uses it'
+  : `used by ${n.reach > 128 ? 'about ' : ''}${fmt(n.reach)} declaration${n.reach === 1 ? '' : 's'} in all, ${fmt(n.in_degree)} directly`;
 const shorten = (s) => (s.length <= MAX_CHARS ? s : s.slice(0, 10) + '…' + s.slice(-(MAX_CHARS - 11)));
 
 // ---------- state lives in the URL hash ----------
@@ -225,11 +297,13 @@ function readState() {
     d: [1, 2, 3].includes(d) ? d : 1,
     e: p.get('e') !== '0',
     l: [25, 50, 100].includes(l) ? l : 25,
+    p: p.get('p') === '1', // show Lean core plumbing; hidden unless asked for
+    t: p.get('t') === '1', // theorems only
   };
 }
 function go(patch) {
   const s = { ...readState(), ...patch };
-  const p = new URLSearchParams({ n: s.n, d: s.d, e: s.e ? 1 : 0, l: s.l });
+  const p = new URLSearchParams({ n: s.n, d: s.d, e: s.e ? 1 : 0, l: s.l, ...(s.p ? { p: 1 } : {}), ...(s.t ? { t: 1 } : {}) });
   const next = '#' + p.toString();
   if (next === location.hash) return load();
   if ('n' in patch) location.hash = next; // a new focus is a history entry
@@ -301,7 +375,9 @@ function clearGraph() {
 }
 const exampleLinks = () => EXAMPLES.flatMap((n, i) => [i ? ' · ' : '', h('a', { href: '#n=' + encodeURIComponent(n), textContent: n })]);
 
+let lastDrawn = null; // what the graph shows, to redraw it when only the node measure changes
 function draw(data, state) {
+  lastDrawn = { data, state };
   clearGraph();
   const { height: H } = svg.getBoundingClientRect();
   const cols = []; // {x, side, dist, nodes}
@@ -324,11 +400,19 @@ function draw(data, state) {
   const addNode = (n, x, y, isFocus) => {
     const g = el('g', { class: 'node' + (isFocus ? ' focus' : '') + (n.kind ? '' : ' stub'), transform: `translate(${x},${y})` });
     g.append(
-      el('title', {}, n.name + (n.kind ? ` — ${n.kind}` : '')),
+      el('title', {}, n.name + (n.kind ? ` — ${n.kind}` : '') +
+        (n.in_degree === null ? '' : ` — ${usedByText(n)} — PageRank ${Number(n.pagerank).toExponential(2)}, ${timesAverage(n.pagerank)} the average`)),
       el('rect', { x: -NODE_W / 2, y: -NODE_H / 2, width: NODE_W, height: NODE_H, rx: 7 }),
       el('circle', { cx: -NODE_W / 2 + 13, cy: 0, r: 4.5, fill: kindColor(n.kind) }),
       el('text', { x: -NODE_W / 2 + 24, y: 0.5 }, shorten(n.name))
     );
+    if (n.in_degree !== null) {
+      // How much of Mathlib rests on this declaration, by the chosen measure: a number, and a bar under the name.
+      const shown = METRICS[metric()].of(n);
+      g.append(el('text', { class: 'count' + (shown.zero ? ' zero' : ''), x: NODE_W / 2 - 9, y: 0.5 }, shown.label));
+      const width = (NODE_W - 16) * shown.share;
+      if (width > 0) g.append(el('rect', { class: 'usage', x: -NODE_W / 2 + 8, y: NODE_H / 2 - 4.5, width: Math.max(2, width), height: 2.5, rx: 1.25 }));
+    }
     edgesOf.set(g, (g.edgeEls = []));
     if (!isFocus) {
       g.setAttribute('tabindex', '0');
@@ -366,9 +450,10 @@ function draw(data, state) {
       ? (c.dist === 1 ? 'depends on' : `depends on · ${c.dist} steps away`)
       : (c.dist === 1 ? 'used by' : `used by · ${c.dist} steps away`);
     const named = c.nodes.filter((n) => n.pinned).length;
-    const sub = total === 0 ? 'none' : shown >= total ? `${fmt(total)}`
+    const hiddenCount = (data[c.side].hidden || [])[c.dist - 1] || 0;
+    const sub = (total === 0 ? 'none' : shown >= total ? `${fmt(total)}`
       : named ? `${fmt(named)} named in the code + top ${fmt(shown - named)} of ${fmt(total)} by PageRank`
-      : `top ${fmt(shown)} of ${fmt(total)} by PageRank`;
+      : `top ${fmt(shown)} of ${fmt(total)} by PageRank`) + (hiddenCount ? ` · ${fmt(hiddenCount)} hidden by filters` : '');
     $('labels').append(el('text', { class: 'colhead', x: c.x, y: top - 46 }, head), el('text', { class: 'colsub', x: c.x, y: top - 30 }, sub));
     if (c.dist === 1 && total === 0) {
       const what = c.side === 'out' ? 'dependencies' : 'dependents';
@@ -489,7 +574,7 @@ async function pinNamed(f, seq) {
   try {
     const res = await fetch('/api/node', {
       method: 'POST',
-      body: JSON.stringify({ name: f.name, depth: state.d, explicit: state.e, limit: state.l, pin: named }),
+      body: JSON.stringify({ name: f.name, depth: state.d, explicit: state.e, limit: state.l, pin: named, plumbing: state.p, theorems: state.t }),
     });
     if (!res.ok) return;
     const data = await res.json();
@@ -497,10 +582,10 @@ async function pinNamed(f, seq) {
   } catch { /* the graph without the extra nodes is still correct */ }
 }
 
-// The statement typeset as mathematics, or null when it cannot be (a structure, a statement
+// The statement typeset as mathematics, as [text block, copy button], or null when it cannot be (a structure, a statement
 // the converter does not understand, KaTeX not loaded, or LaTeX that KaTeX rejects).
 function renderMath(statement, name, context) {
-  const tex = window.LeanLatex && window.katex ? LeanLatex.toLatex(statement, name, context) : null;
+  const tex = window.LeanLatex && window.katex ? LeanLatex.toLatex(statement, name, context, { notation: notation() }) : null;
   if (!tex) return null;
   const box = h('div', { className: 'tex' }, h('span', { className: 'kind', textContent: tex.kind + '. ' }));
   try {
@@ -517,8 +602,47 @@ function renderMath(statement, name, context) {
     catch { copy.textContent = 'Copy failed'; }
     setTimeout(() => (copy.textContent = 'Copy LaTeX'), 1200);
   };
-  box.append(copy);
-  return box;
+  return [box, copy];
+}
+
+// A docstring with its `code` and **bold** marks shown as such; everything else is plain text.
+function docText(doc) {
+  const frag = document.createDocumentFragment();
+  for (const piece of doc.split(/(\*\*[^*\n]+\*\*|`[^`\n]+`)/)) {
+    if (/^\*\*.+\*\*$/.test(piece)) frag.append(h('strong', { textContent: piece.slice(2, -2) }));
+    else if (/^`.+`$/.test(piece)) frag.append(h('code', { textContent: piece.slice(1, -1) }));
+    else frag.append(piece);
+  }
+  return frag;
+}
+
+// Which notation conventions to typeset with; a reader's preference, kept in this browser.
+function notation() {
+  try { return localStorage.getItem('notation') === 'fr' ? 'fr' : 'intl'; } catch { return 'intl'; }
+}
+$('notation').value = notation();
+$('notation').onchange = (e) => {
+  try { localStorage.setItem('notation', e.target.value); } catch { /* private mode: applies to this page only */ }
+  drawBand();
+};
+
+// Above the graph: what the source says about the declaration, then its statement typeset.
+let band = null; // { r: the source lookup, f: the focused node } for the declaration on show
+function drawBand() {
+  if (!band) return showTheorem(null);
+  const { r, f } = band;
+  const math = renderMath(r.statement, f.name, r.context);
+  const doc = r.doc ? h('p', { className: 'doc' }, docText(r.doc)) : null;
+  showTheorem(doc || math ? [h('div', { className: 'main' }, ...[doc, math && math[0]].filter(Boolean)), ...(math ? [math[1]] : [])] : null);
+}
+
+// The band above the graph: the docstring and the focused declaration's statement, typeset.
+function showTheorem(nodes) {
+  const band = $('theorem'), wasHidden = band.hidden;
+  band.replaceChildren(...(nodes || []));
+  band.hidden = !nodes;
+  band.scrollTop = 0;
+  if (wasHidden !== band.hidden) fit(); // the graph area changed height
 }
 
 // Fills `box` with the declaration's Lean statement, read from its source file on GitHub;
@@ -529,7 +653,7 @@ const WHY_NOT = {
   fetch_failed: 'Couldn’t download the source file from GitHub.',
 };
 async function loadStatement(f, box, srcLink) {
-  if (!sourceUrl(f.file_module)) return showProof(null); // Lean core: the dataset has no source file
+  if (!sourceUrl(f.file_module)) { band = null; showTheorem(null); return showProof(null); } // Lean core: the dataset has no source file
   const seq = loadSeq;
   const note = (text) => h('p', { className: 'note', textContent: text });
   box.replaceChildren(h('h3', { textContent: 'Statement' }), note('Loading from GitHub…'));
@@ -542,14 +666,13 @@ async function loadStatement(f, box, srcLink) {
   if (seq !== loadSeq) return;
   const kids = [h('h3', { textContent: 'Statement' })];
   if (r.found) {
-    if (r.doc) kids.push(h('p', { className: 'doc', textContent: r.doc }));
-    const math = renderMath(r.statement, f.name, r.context);
-    if (math) kids.push(math);
     kids.push(h('pre', {}, h('code', {}, renderLean(r.statement, r.deps, f.name))));
     kids.push(note(`Line ${fmt(r.line)} on today’s master branch, which may differ from the February 2026 snapshot behind the graph.`));
     if (srcLink) srcLink.href = r.url;
   } else kids.push(note(WHY_NOT[r.reason] || WHY_NOT.fetch_failed));
   box.replaceChildren(...kids);
+  band = r.found ? { r, f } : null;
+  drawBand();
   const done = () => pinNamed(f, seq);
   setTimeout(done, 0);
   showProof(r.found && r.body ? { title: f.kind === 'theorem' ? 'Proof' : 'Definition', name: f.name, body: r.body, deps: r.deps } : null);
@@ -572,7 +695,8 @@ function drawPanel(data) {
   const statement = h('div');
   loadStatement(f, statement, srcLink);
   if (f.out_degree !== null) row(dl, 'Depends on', `${fmt(f.out_degree)} declarations`);
-  if (f.in_degree !== null) row(dl, 'Used by', `${fmt(f.in_degree)} declarations`);
+  if (f.in_degree !== null) row(dl, 'Used directly by', `${fmt(f.in_degree)} declarations`);
+  if (f.reach !== null && f.reach !== undefined) row(dl, 'Used in all by', `${f.reach > 128 ? 'about ' : ''}${fmt(f.reach)} declarations`);
   if (f.kind) row(dl, 'PageRank', Number(f.pagerank).toExponential(2));
   if (f.dag_layer !== null) row(dl, 'DAG layer', f.dag_layer === -1 ? 'in a cycle' : String(f.dag_layer));
   if (f.is_tactic_proof) row(dl, 'Proof', `tactic proof, ${fmt(f.tactic_count ?? 0)} tactic${f.tactic_count === 1 ? '' : 's'}` + (f.top_tactic ? `, mostly ${f.top_tactic}` : ''));
@@ -604,12 +728,16 @@ let loadSeq = 0;
 async function load() {
   const state = readState();
   $('explicit').checked = state.e;
+  $('plumbing').checked = !state.p;
+  $('theorems').checked = state.t;
   $('limit').value = String(state.l);
   for (const b of $('depth').children) b.setAttribute('aria-pressed', String(Number(b.dataset.v) === state.d));
   const seq = ++loadSeq;
   if (!state.n) {
     clearGraph();
     showProof(null);
+    band = null;
+    showTheorem(null);
     $('panel').replaceChildren(h('p', { className: 'note', textContent: 'Details of the focused declaration appear here.' }));
     document.title = 'Mathlib graph navigator';
     showMessage(h('h2', { textContent: 'Pick a declaration to explore' }),
@@ -618,7 +746,7 @@ async function load() {
   }
   let res, data;
   try {
-    res = await fetch(`/api/node?name=${encodeURIComponent(state.n)}&depth=${state.d}&explicit=${state.e ? 1 : 0}&limit=${state.l}`);
+    res = await fetch(`/api/node?name=${encodeURIComponent(state.n)}&depth=${state.d}&explicit=${state.e ? 1 : 0}&limit=${state.l}&plumbing=${state.p ? 1 : 0}&theorems=${state.t ? 1 : 0}`);
     data = await res.json();
   } catch {
     if (seq !== loadSeq) return;
@@ -631,6 +759,8 @@ async function load() {
     clearGraph();
     $('panel').replaceChildren();
     showProof(null);
+    band = null;
+    showTheorem(null);
     document.title = 'Mathlib graph navigator';
     return showMessage(
       h('h2', { textContent: res.status === 404 ? 'No declaration with that name' : 'Something went wrong' }),
@@ -646,13 +776,23 @@ window.addEventListener('resize', () => bbox && fit());
 
 // ---------- controls ----------
 $('explicit').onchange = (e) => go({ e: e.target.checked });
+$('plumbing').onchange = (e) => go({ p: !e.target.checked });
+$('theorems').onchange = (e) => go({ t: e.target.checked });
+$('metric').value = metric();
+$('metric').onchange = (e) => {
+  chosenMetric = Object.hasOwn(METRICS, e.target.value) ? e.target.value : 'reach';
+  try { localStorage.setItem('metric', e.target.value); } catch { /* private mode: applies to this page only */ }
+  $('legend-metric').textContent = METRICS[metric()].legend;
+  if (lastDrawn) draw(lastDrawn.data, lastDrawn.state);
+};
 $('limit').onchange = (e) => go({ l: Number(e.target.value) });
 $('depth').onclick = (e) => { if (e.target.dataset.v) go({ d: Number(e.target.dataset.v) }); };
 $('legend').append(...KINDS.map((k) => {
   const d = h('span', { className: 'dot' });
   d.style.background = kindColor(k);
   return h('span', {}, d, k);
-}));
+}), h('span', { title: 'The number at the right of each node, and the bar under its name (log scale)' },
+  h('span', { className: 'bar' }), h('span', { id: 'legend-metric', textContent: METRICS[metric()].legend })));
 
 // ---------- search ----------
 const q = $('q'), results = $('results');
@@ -715,8 +855,14 @@ window.addEventListener('keydown', (e) => {
 });
 
 // Open on a default declaration when the address names none.
-const DEFAULT_FOCUS = 'irrational_sqrt_two';
+const DEFAULT_FOCUS = 'EuclideanGeometry.dist_sq_eq_dist_sq_add_dist_sq_iff_angle_eq_pi_div_two'; // the Pythagorean theorem
 if (!readState().n) history.replaceState(null, '', '#n=' + encodeURIComponent(DEFAULT_FOCUS));
+// The title is the way home: the default declaration with the default view settings.
+$('home').addEventListener('click', (e) => {
+  if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return; // let "open in new tab" work
+  e.preventDefault();
+  go({ n: DEFAULT_FOCUS, d: 1, e: true, l: 25, p: false, t: false });
+});
 load();
 </script>
 </body>

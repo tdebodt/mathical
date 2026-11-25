@@ -109,3 +109,39 @@ test('pins do not leak into deeper levels or the other side', () => {
   assert.deepEqual(r.out.nodes.map((n) => [n.name, n.dist]), [['B', 1], ['A', 1], ['C', 2]]);
   assert.deepEqual(neighborhood(db, 'C', { limit: 1, pin: ['B'] }).in.nodes.map((n) => n.name), ['A']);
 });
+
+test('hidePlumbing leaves out Lean core logic and notation, but keeps core data such as Nat', () => {
+  const all = neighborhood(db, 'Core');
+  assert.deepEqual(names(all.out), ['Eq.mpr', 'axb', 'Nat.succ']);
+  assert.deepEqual(all.out.hidden, [0]);
+  const tidy = neighborhood(db, 'Core', { hidePlumbing: true });
+  assert.deepEqual(names(tidy.out), ['axb', 'Nat.succ']);
+  assert.deepEqual(tidy.out.totals, [2]);
+  assert.deepEqual(tidy.out.hidden, [1]);
+  assert.equal(tidy.out.edges.length, 2);
+  // a pin does not bring plumbing back, and a declaration without metadata is not plumbing
+  assert.deepEqual(names(neighborhood(db, 'Core', { hidePlumbing: true, pin: ['Eq.mpr'] }).out), ['axb', 'Nat.succ']);
+  assert.ok(names(neighborhood(db, 'Thm', { hidePlumbing: true }).out).includes('Ghost'));
+});
+
+test('hidePlumbing never hides the focus itself', () => {
+  const r = neighborhood(db, 'Eq.mpr', { hidePlumbing: true });
+  assert.equal(r.focus.name, 'Eq.mpr');
+  assert.deepEqual(names(r.in), ['Core']);
+});
+
+test('theoremsOnly keeps only theorems among the neighbours', () => {
+  const r = neighborhood(db, 'Thm', { theoremsOnly: true });
+  assert.deepEqual(names(r.out), ['A', 'B']); // Ghost has no kind
+  assert.deepEqual(r.out.totals, [2]);
+  assert.deepEqual(r.out.hidden, [1]);
+  const all = neighborhood(db, 'Thm', { theoremsOnly: true, explicit: false });
+  assert.deepEqual(names(all.out), ['A', 'B']); // Hub is a definition
+  assert.deepEqual(all.out.hidden, [2]);
+  // the focus may be a definition, and both filters combine
+  assert.equal(neighborhood(db, 'Hub', { theoremsOnly: true, limit: 5 }).in.nodes.length, 5);
+  const both = neighborhood(db, 'Core', { theoremsOnly: true, hidePlumbing: true });
+  assert.deepEqual(names(both.out), ['axb', 'Nat.succ']);
+  assert.deepEqual(both.out.hidden, [1]);
+  assert.deepEqual(names(neighborhood(db, 'Thm', { theoremsOnly: true, pin: ['Ghost'] }).out), ['A', 'B']);
+});

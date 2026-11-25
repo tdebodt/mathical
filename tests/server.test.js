@@ -173,3 +173,20 @@ test('POST /api/node accepts a list of names to pin', async () => {
   assert.equal((await post({ name: 'Thm', pin: 'x'.repeat(300000) })).status, 413);
   assert.equal((await fetch(base + '/api/search?q=Th', { method: 'POST' })).status, 405);
 });
+
+test('plumbing=0 hides Lean core plumbing; the default shows everything', async () => {
+  assert.deepEqual((await get('/api/node?name=Core')).body.out.nodes.map((n) => n.name), ['Eq.mpr', 'axb', 'Nat.succ']);
+  const tidy = (await get('/api/node?name=Core&plumbing=0')).body.out;
+  assert.deepEqual(tidy.nodes.map((n) => n.name), ['axb', 'Nat.succ']);
+  assert.deepEqual(tidy.hidden, [1]);
+  const res = await fetch(base + '/api/node', { method: 'POST', body: JSON.stringify({ name: 'Core', plumbing: false }) });
+  assert.deepEqual((await res.json()).out.nodes.map((n) => n.name), ['axb', 'Nat.succ']);
+});
+
+test('theorems=1 keeps only theorems', async () => {
+  const out = (await get('/api/node?name=Thm&theorems=1')).body.out;
+  assert.deepEqual(out.nodes.map((n) => n.name), ['A', 'B']);
+  assert.deepEqual(out.hidden, [1]);
+  const res = await fetch(base + '/api/node', { method: 'POST', body: JSON.stringify({ name: 'Thm', theorems: true }) });
+  assert.deepEqual((await res.json()).out.nodes.map((n) => n.name), ['A', 'B']);
+});

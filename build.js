@@ -55,7 +55,8 @@ async function main() {
     metricsCsv,
     dbPath: path.join(DATA, 'mathlib.db'),
     onProgress: ({ phase, rows }) =>
-      status(phase === 'index' ? 'building indexes…' : `loading ${phase}: ${rows.toLocaleString('en-US')} rows`),
+      status(phase === 'index' ? 'building indexes…' : phase === 'reach' ? 'counting indirect dependents…'
+        : `loading ${phase}: ${rows.toLocaleString('en-US')} rows`),
   });
   const n = (v) => v.toLocaleString('en-US');
   console.log(

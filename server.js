@@ -114,6 +114,8 @@ function createServer(dbPath, { fetchSource = fetchFromGitHub } = {}) {
               explicit: body.explicit !== false && body.explicit !== 0,
               limit: body.limit ?? 25,
               pin: body.pin,
+              hidePlumbing: body.plumbing === false || body.plumbing === 0,
+              theoremsOnly: body.theorems === true || body.theorems === 1,
             });
             return result ? json(res, 200, result) : json(res, 404, { error: 'not found' });
           } catch (err) {
@@ -135,6 +137,8 @@ function createServer(dbPath, { fetchSource = fetchFromGitHub } = {}) {
           depth: params.get('depth') ?? 1,
           explicit: params.get('explicit') !== '0',
           limit: params.get('limit') ?? 25,
+          hidePlumbing: params.get('plumbing') === '0',
+          theoremsOnly: params.get('theorems') === '1',
         });
         return result ? json(res, 200, result) : json(res, 404, { error: 'not found' });
       }
