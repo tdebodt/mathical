@@ -1,0 +1,723 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mathlib graph navigator</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous">
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f6f5f1; --surface: #ffffff; --line: #dcd9d0; --text: #1d1c1a; --muted: #6d6a63;
+    --accent: #b4491f; --edge: #a9a59a; --pill: #ffffff; --pill-line: #cfcbc0; --focus-bg: #fff3ea;
+    --k-theorem: #3f6fd1; --k-definition: #2a9461; --k-abbrev: #1397a1; --k-inductive: #7c55e0;
+    --k-constructor: #cc4c92; --k-opaque: #7a7a7a; --k-axiom: #cf3f3f; --k-quotient: #cf8317; --k-unknown: #a0a0a0;
+    --c-kw: #a3368f; --c-tac: #2f63c9; --c-comment: #7d7a72; --c-str: #2b7d4f; --c-num: #a85d00; --c-attr: #7c55e0; --c-warn: #cf3f3f;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #17171a; --surface: #1f1f23; --line: #34343a; --text: #ecebe6; --muted: #9a988f;
+      --accent: #f08a54; --edge: #5b5b63; --pill: #26262b; --pill-line: #3d3d45; --focus-bg: #3a2a20;
+      --k-theorem: #7ba0f0; --k-definition: #55c08d; --k-abbrev: #46c3cc; --k-inductive: #a68bf2;
+      --k-constructor: #e57fb7; --k-opaque: #a3a3a3; --k-axiom: #ee7070; --k-quotient: #e6a646; --k-unknown: #777;
+      --c-kw: #e08ad0; --c-tac: #86aaf5; --c-comment: #8d8b83; --c-str: #6fcf9a; --c-num: #e5ad5a; --c-attr: #b39cf5; --c-warn: #f08080;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { display: grid; grid-template-rows: auto 1fr; background: var(--bg); color: var(--text);
+         font: 14px/1.45 var(--sans); overflow: hidden; }
+  header { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; padding: 10px 16px;
+           background: var(--surface); border-bottom: 1px solid var(--line); }
+  h1 { font-size: 15px; margin: 0; font-weight: 650; letter-spacing: .01em; white-space: nowrap; }
+  .search { position: relative; flex: 1 1 320px; max-width: 560px; }
+  .search input { width: 100%; padding: 7px 10px; font: 13px var(--mono); color: var(--text);
+                  background: var(--bg); border: 1px solid var(--line); border-radius: 7px; }
+  .search input:focus, button:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  #results { position: absolute; z-index: 10; top: calc(100% + 4px); left: 0; right: 0; margin: 0; padding: 4px;
+             list-style: none; background: var(--surface); border: 1px solid var(--line); border-radius: 8px;
+             box-shadow: 0 8px 28px rgb(0 0 0 / .18); max-height: 60vh; overflow: auto; }
+  #results[hidden] { display: none; }
+  #results li { display: flex; align-items: baseline; gap: 8px; padding: 5px 8px; border-radius: 5px; cursor: pointer; }
+  #results li.active { background: var(--focus-bg); }
+  #results .nm { font: 12.5px var(--mono); overflow-wrap: anywhere; }
+  #results .meta { margin-left: auto; color: var(--muted); font-size: 12px; white-space: nowrap; }
+  #results .none { color: var(--muted); cursor: default; }
+  .dot { flex: none; width: 9px; height: 9px; border-radius: 50%; display: inline-block; background: var(--k-unknown); }
+  .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; color: var(--muted); font-size: 13px; }
+  .controls label, .controls .group { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
+  .seg button { border: 0; border-right: 1px solid var(--line); border-radius: 0; }
+  .seg button:last-child { border-right: 0; }
+  button, select { font: inherit; font-size: 13px; color: var(--text); background: var(--surface);
+                   border: 1px solid var(--line); border-radius: 7px; padding: 4px 10px; cursor: pointer; }
+  button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+  main { display: grid; grid-template-columns: 1fr clamp(320px, 30vw, 460px); grid-template-rows: minmax(0, 1fr) auto; min-height: 0; }
+  #stage { grid-column: 1; grid-row: 1; }
+  aside { grid-column: 2; grid-row: 1 / span 2; }
+  #proof { grid-column: 1; grid-row: 2; min-width: 0; display: flex; flex-direction: column; max-height: 38vh;
+           background: var(--surface); border-top: 1px solid var(--line); }
+  #proof[hidden] { display: none; }
+  #proof header { padding: 8px 16px; gap: 10px; border-bottom: 1px solid var(--line); flex-wrap: nowrap; }
+  #proof h2 { font: 600 12px var(--sans); color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin: 0; white-space: nowrap; }
+  #proof .name { font: 12.5px var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  #proof .spacer { flex: 1; }
+  #proof pre { margin: 0; padding: 12px 16px; font: 12.5px/1.55 var(--mono); white-space: pre; overflow: auto; tab-size: 2; min-height: 0; }
+  #proof.collapsed pre { display: none; }
+  #stage { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
+  svg { width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; user-select: none; }
+  svg.dragging { cursor: grabbing; }
+  .zoom { position: absolute; right: 12px; bottom: 12px; display: flex; gap: 4px; }
+  .legend { position: absolute; left: 12px; bottom: 12px; display: flex; flex-wrap: wrap; gap: 4px 12px; max-width: 70%;
+            padding: 6px 10px; font-size: 12px; color: var(--muted); background: var(--surface);
+            border: 1px solid var(--line); border-radius: 8px; }
+  .legend span { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+  #message { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; padding: 24px;
+             color: var(--muted); pointer-events: none; }
+  #message[hidden] { display: none; }
+  #message > div { pointer-events: auto; max-width: 520px; }
+  #message h2 { color: var(--text); font-size: 18px; margin: 0 0 6px; }
+  #message a { font-family: var(--mono); font-size: 13px; }
+  a { color: var(--accent); }
+  .node { cursor: pointer; }
+  .node rect { fill: var(--pill); stroke: var(--pill-line); stroke-width: 1; }
+  .node text { font: 12px var(--mono); fill: var(--text); dominant-baseline: central; }
+  .node:hover rect, .node.hl rect, .node:focus-visible rect { stroke: var(--accent); stroke-width: 1.6; }
+  .node:focus { outline: none; }
+  .node.focus { cursor: default; }
+  .node.focus rect { fill: var(--focus-bg); stroke: var(--accent); stroke-width: 2; }
+  .node.focus text { font-weight: 650; }
+  .node.stub rect { stroke-dasharray: 4 3; }
+  .edge { fill: none; stroke: var(--edge); stroke-width: 1; opacity: .55; marker-end: url(#arrow); }
+  .edge.syn { stroke-dasharray: 3 4; opacity: .35; }
+  svg.hovering .edge { opacity: .1; }
+  svg.hovering .edge.hl { stroke: var(--accent); opacity: 1; stroke-width: 1.5; marker-end: url(#arrow-hl); }
+  /* spotlight: one node picked out from the proof text */
+  svg.spot .node:not(.pick):not(.focus) { opacity: .28; }
+  svg.spot .edge { opacity: .07; }
+  svg.spot .edge.pick { stroke: var(--accent); opacity: 1; stroke-width: 2.4; stroke-dasharray: none; marker-end: url(#arrow-hl); }
+  .node.pick rect { fill: var(--accent); stroke: var(--accent); stroke-width: 2; }
+  .node.pick text { fill: #fff; font-weight: 650; }
+  .node.pick circle { stroke: #fff; stroke-width: 1.5; }
+  #proof .hint { color: var(--muted); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  #arrow path { fill: var(--edge); } #arrow-hl path { fill: var(--accent); }
+  .colhead { font: 600 12px var(--sans); fill: var(--text); text-anchor: middle; }
+  .colsub { font: 11.5px var(--sans); fill: var(--muted); text-anchor: middle; }
+  .empty { font: 12.5px var(--sans); fill: var(--muted); text-anchor: middle; }
+  aside { border-left: 1px solid var(--line); background: var(--surface); padding: 16px; overflow: auto; min-width: 0; }
+  aside h2 { font: 650 14px var(--mono); margin: 0 0 4px; overflow-wrap: anywhere; }
+  aside .kind { display: flex; align-items: center; gap: 6px; color: var(--muted); margin-bottom: 12px; }
+  aside dl { display: grid; grid-template-columns: auto 1fr; gap: 5px 12px; margin: 12px 0; font-size: 13px; }
+  aside dt { color: var(--muted); white-space: nowrap; }
+  aside dd { margin: 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+  aside dd.mono { font: 12px var(--mono); }
+  aside .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  aside h3 { font: 600 12px var(--sans); color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin: 16px 0 6px; }
+  aside pre { margin: 0; padding: 10px 12px; font: 12px/1.5 var(--mono); background: var(--bg); border: 1px solid var(--line);
+              border-radius: 8px; white-space: pre; overflow-x: auto; tab-size: 2; }
+  aside .doc { margin: 0 0 8px; font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  code .kw { color: var(--c-kw); font-weight: 600; } code .tac { color: var(--c-tac); }
+  code .comment { color: var(--c-comment); font-style: italic; } code .str { color: var(--c-str); }
+  code .num { color: var(--c-num); } code .attr { color: var(--c-attr); } code .warn { color: var(--c-warn); font-weight: 600; }
+  code a.dep { color: inherit; text-decoration: underline; text-decoration-color: var(--accent); text-decoration-thickness: 1.5px;
+               text-underline-offset: 3px; border-radius: 3px; cursor: pointer; }
+  code a.dep:hover, code a.dep:focus-visible { background: var(--focus-bg); color: var(--accent); outline: none; }
+  aside .tex { margin: 0 0 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; font-size: 14px; line-height: 1.7; }
+  aside .tex .display { display: block; overflow-x: auto; overflow-y: hidden; padding: 6px 0 2px; }
+  aside .tex .katex-display { margin: 0; }
+  aside .tex .kind { display: inline; font-weight: 650; color: var(--text); margin: 0; }
+  aside .tex button { display: block; margin-top: 8px; font-size: 12px; padding: 2px 8px; }
+  aside p.note { color: var(--muted); font-size: 12.5px; }
+  aside .linklike { border: 0; padding: 0; background: none; color: var(--accent); font: 12px var(--mono);
+                    text-decoration: underline; text-align: left; overflow-wrap: anywhere; }
+  @media (max-width: 860px) {
+    body { overflow: auto; }
+    main { grid-template-columns: 1fr; grid-template-rows: 62vh auto auto; }
+    aside { grid-column: 1; grid-row: 3; border-left: 0; border-top: 1px solid var(--line); }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Mathlib graph navigator</h1>
+  <div class="search">
+    <input id="q" type="search" placeholder="Search a theorem, lemma or definition…  ( / )" autocomplete="off"
+           spellcheck="false" aria-label="Search declarations" aria-controls="results">
+    <ul id="results" role="listbox" hidden></ul>
+  </div>
+  <div class="controls">
+    <label title="Hide the dependencies Lean filled in by itself (typeclass instances and similar)">
+      <input id="explicit" type="checkbox" checked> explicit only</label>
+    <span class="group">depth
+      <span class="seg" id="depth" role="group" aria-label="Depth">
+        <button type="button" data-v="1">1</button><button type="button" data-v="2">2</button><button type="button" data-v="3">3</button>
+      </span>
+    </span>
+    <label>show up to
+      <select id="limit"><option>25</option><option>50</option><option>100</option></select> per level</label>
+  </div>
+</header>
+<main>
+  <div id="stage">
+    <svg id="svg" role="img" aria-label="Dependency graph">
+      <defs>
+        <marker id="arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L8 4L0 8z"/></marker>
+        <marker id="arrow-hl" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L8 4L0 8z"/></marker>
+      </defs>
+      <g id="view"><g id="edges"></g><g id="nodes"></g><g id="labels"></g></g>
+    </svg>
+    <div id="message" hidden><div></div></div>
+    <div class="legend" id="legend"></div>
+    <div class="zoom">
+      <button type="button" id="zout" aria-label="Zoom out">−</button>
+      <button type="button" id="zin" aria-label="Zoom in">+</button>
+      <button type="button" id="zfit">Fit</button>
+    </div>
+  </div>
+  <section id="proof" aria-label="Proof" hidden>
+    <header>
+      <h2 id="proof-title">Proof</h2>
+      <span class="name" id="proof-name"></span>
+      <span class="hint" id="proof-hint" aria-live="polite"></span>
+      <span class="spacer"></span>
+      <button type="button" id="proof-toggle" aria-expanded="true">Hide</button>
+    </header>
+    <pre tabindex="0"><code id="proof-code"></code></pre>
+  </section>
+  <aside id="panel" aria-live="polite"></aside>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" crossorigin="anonymous"></script>
+<script src="/lean.js"></script>
+<script src="/lean-phrases.js"></script>
+<script src="/lean-latex.js"></script>
+<script>
+'use strict';
+const $ = (id) => document.getElementById(id);
+const SVG = 'http://www.w3.org/2000/svg';
+const el = (tag, attrs = {}, text) => {
+  const e = document.createElementNS(SVG, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (text !== undefined) e.textContent = text;
+  return e;
+};
+const h = (tag, props = {}, ...kids) => {
+  const e = Object.assign(document.createElement(tag), props);
+  e.append(...kids);
+  return e;
+};
+const fmt = (n) => Number(n).toLocaleString('en-US');
+const KINDS = ['theorem', 'definition', 'abbrev', 'inductive', 'constructor', 'opaque', 'axiom', 'quotient'];
+const kindColor = (k) => `var(--k-${KINDS.includes(k) ? k : 'unknown'})`;
+const EXAMPLES = ['Nat.add_comm', 'Real.sqrt_nonneg', 'Commute.exp_right'];
+
+const NODE_W = 236, NODE_H = 26, ROW = 32, COL = 330, MAX_CHARS = 29;
+const shorten = (s) => (s.length <= MAX_CHARS ? s : s.slice(0, 10) + '…' + s.slice(-(MAX_CHARS - 11)));
+
+// ---------- state lives in the URL hash ----------
+function readState() {
+  const p = new URLSearchParams(location.hash.slice(1));
+  const d = Number(p.get('d')), l = Number(p.get('l'));
+  return {
+    n: p.get('n') || '',
+    d: [1, 2, 3].includes(d) ? d : 1,
+    e: p.get('e') !== '0',
+    l: [25, 50, 100].includes(l) ? l : 25,
+  };
+}
+function go(patch) {
+  const s = { ...readState(), ...patch };
+  const p = new URLSearchParams({ n: s.n, d: s.d, e: s.e ? 1 : 0, l: s.l });
+  const next = '#' + p.toString();
+  if (next === location.hash) return load();
+  if ('n' in patch) location.hash = next; // a new focus is a history entry
+  else { history.replaceState(null, '', next); load(); } // depth, filter and cap are not
+}
+
+// ---------- pan / zoom ----------
+const svg = $('svg'), view = $('view');
+const cam = { x: 0, y: 0, k: 1 };
+let bbox = null;
+const applyCam = () => view.setAttribute('transform', `translate(${cam.x},${cam.y}) scale(${cam.k})`);
+function zoomAt(px, py, factor) {
+  const k = Math.min(2.5, Math.max(0.15, cam.k * factor));
+  cam.x = px - (px - cam.x) * (k / cam.k);
+  cam.y = py - (py - cam.y) * (k / cam.k);
+  cam.k = k;
+  applyCam();
+}
+function fit() {
+  if (!bbox) return;
+  const { width: W, height: H } = svg.getBoundingClientRect();
+  const bw = bbox.x1 - bbox.x0 + 60, bh = bbox.y1 - bbox.y0 + 60;
+  cam.k = Math.min(1, Math.max(0.5, W / bw));
+  cam.x = bw * cam.k <= W ? (W - (bbox.x0 + bbox.x1) * cam.k) / 2 : W / 2; // else centre the focus column
+  cam.y = bh * cam.k <= H ? (H - (bbox.y0 + bbox.y1) * cam.k) / 2 : 24 - bbox.y0 * cam.k;
+  applyCam();
+}
+let drag = null, moved = false;
+svg.addEventListener('pointerdown', (e) => {
+  if (e.button !== 0) return;
+  drag = { x: e.clientX, y: e.clientY, cx: cam.x, cy: cam.y };
+  moved = false;
+});
+window.addEventListener('pointermove', (e) => {
+  if (!drag) return;
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+  if (!moved && Math.hypot(dx, dy) < 4) return;
+  moved = true;
+  svg.classList.add('dragging');
+  cam.x = drag.cx + dx;
+  cam.y = drag.cy + dy;
+  applyCam();
+});
+window.addEventListener('pointerup', () => { drag = null; svg.classList.remove('dragging'); });
+svg.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const r = svg.getBoundingClientRect();
+  if (e.ctrlKey || e.metaKey) zoomAt(e.clientX - r.left, e.clientY - r.top, Math.exp(-e.deltaY * 0.01));
+  else { cam.x -= e.deltaX; cam.y -= e.deltaY; applyCam(); }
+}, { passive: false });
+const zoomCentre = (f) => { const r = svg.getBoundingClientRect(); zoomAt(r.width / 2, r.height / 2, f); };
+$('zin').onclick = () => zoomCentre(1.25);
+$('zout').onclick = () => zoomCentre(0.8);
+$('zfit').onclick = fit;
+
+// ---------- drawing ----------
+function showMessage(...content) {
+  const box = $('message');
+  box.firstElementChild.replaceChildren(...content);
+  box.hidden = content.length === 0;
+}
+function clearGraph() {
+  for (const id of ['edges', 'nodes', 'labels']) $(id).replaceChildren();
+  nodeByName = new Map();
+  focusNode = null;
+  svg.classList.remove('hovering', 'spot');
+  $('proof-hint').textContent = ''; // a hovered node removed by a refocus never gets its pointerleave
+  bbox = null;
+}
+const exampleLinks = () => EXAMPLES.flatMap((n, i) => [i ? ' · ' : '', h('a', { href: '#n=' + encodeURIComponent(n), textContent: n })]);
+
+function draw(data, state) {
+  clearGraph();
+  const { height: H } = svg.getBoundingClientRect();
+  const cols = []; // {x, side, dist, nodes}
+  for (const [side, sign] of [['out', -1], ['in', 1]]) {
+    for (let d = 1; d <= state.d; d++) {
+      cols.push({ side, dist: d, x: sign * d * COL, nodes: data[side].nodes.filter((n) => n.dist === d) });
+    }
+  }
+  const tallest = Math.max(1, ...cols.map((c) => c.nodes.length));
+  const centred = tallest * ROW + 90 <= H; // otherwise top-align so the best-ranked nodes are on screen
+  const yOf = (i, n) => (centred ? (i - (n - 1) / 2) * ROW : i * ROW);
+  const top = centred ? -((tallest - 1) / 2) * ROW : 0;
+
+  const pos = { out: new Map(), in: new Map() };
+  const edgesOf = new Map(); // node element -> edge elements
+  const focusPos = { x: 0, y: 0 };
+  pos.out.set(data.focus.id, focusPos);
+  pos.in.set(data.focus.id, focusPos);
+
+  const addNode = (n, x, y, isFocus) => {
+    const g = el('g', { class: 'node' + (isFocus ? ' focus' : '') + (n.kind ? '' : ' stub'), transform: `translate(${x},${y})` });
+    g.append(
+      el('title', {}, n.name + (n.kind ? ` — ${n.kind}` : '')),
+      el('rect', { x: -NODE_W / 2, y: -NODE_H / 2, width: NODE_W, height: NODE_H, rx: 7 }),
+      el('circle', { cx: -NODE_W / 2 + 13, cy: 0, r: 4.5, fill: kindColor(n.kind) }),
+      el('text', { x: -NODE_W / 2 + 24, y: 0.5 }, shorten(n.name))
+    );
+    edgesOf.set(g, (g.edgeEls = []));
+    if (!isFocus) {
+      g.setAttribute('tabindex', '0');
+      g.setAttribute('role', 'link');
+      g.setAttribute('aria-label', n.name);
+      g.addEventListener('click', () => { if (!moved) go({ n: n.name }); });
+      g.addEventListener('keydown', (e) => { if (e.key === 'Enter') go({ n: n.name }); });
+    }
+    const on = (flag) => () => {
+      svg.classList.toggle('hovering', flag);
+      g.classList.toggle('hl', flag);
+      for (const p of edgesOf.get(g)) { p.classList.toggle('hl', flag); p.ends.forEach((o) => o !== g && o.classList.toggle('hl', flag)); }
+    };
+    g.addEventListener('pointerenter', on(true));
+    g.addEventListener('pointerleave', on(false));
+    g.addEventListener('focus', on(true));
+    g.addEventListener('blur', on(false));
+    if (!nodeByName.has(n.name)) nodeByName.set(n.name, g);
+    $('nodes').append(g);
+    return g;
+  };
+
+  const focusEl = (focusNode = addNode(data.focus, 0, 0, true));
+  const elOf = { out: new Map([[data.focus.id, focusEl]]), in: new Map([[data.focus.id, focusEl]]) };
+
+  for (const c of cols) {
+    c.nodes.forEach((n, i) => {
+      const p = { x: c.x, y: yOf(i, c.nodes.length) };
+      pos[c.side].set(n.id, p);
+      elOf[c.side].set(n.id, addNode(n, p.x, p.y, false));
+    });
+    const total = data[c.side].totals[c.dist - 1] ?? 0;
+    const shown = c.nodes.length;
+    const head = c.side === 'out'
+      ? (c.dist === 1 ? 'depends on' : `depends on · ${c.dist} steps away`)
+      : (c.dist === 1 ? 'used by' : `used by · ${c.dist} steps away`);
+    const named = c.nodes.filter((n) => n.pinned).length;
+    const sub = total === 0 ? 'none' : shown >= total ? `${fmt(total)}`
+      : named ? `${fmt(named)} named in the code + top ${fmt(shown - named)} of ${fmt(total)} by PageRank`
+      : `top ${fmt(shown)} of ${fmt(total)} by PageRank`;
+    $('labels').append(el('text', { class: 'colhead', x: c.x, y: top - 46 }, head), el('text', { class: 'colsub', x: c.x, y: top - 30 }, sub));
+    if (c.dist === 1 && total === 0) {
+      const what = c.side === 'out' ? 'dependencies' : 'dependents';
+      const lines = state.e ? [`No explicit ${what}.`, 'Turn off “explicit only” to see the rest.'] : [`No ${what} in the dataset.`];
+      lines.forEach((t, i) => $('labels').append(el('text', { class: 'empty', x: c.x, y: i * 18 - (lines.length - 1) * 9 + 4 }, t)));
+    }
+  }
+  $('labels').append(el('text', { class: 'colhead', x: 0, y: top - 46 }, 'focus'));
+
+  for (const side of ['out', 'in']) {
+    const outer = side === 'out' ? -1 : 1;
+    for (const [s, d, explicit] of data[side].edges) {
+      const a = pos[side].get(s), b = pos[side].get(d);
+      if (!a || !b) continue;
+      if (side === 'in' && s === data.focus.id && pos.out.has(d) && d !== data.focus.id) continue;
+      let path;
+      if (a.x === b.x) {
+        const x = a.x + outer * NODE_W / 2, bulge = outer * (26 + Math.min(60, Math.abs(a.y - b.y) / 6));
+        path = `M${x},${a.y} C${x + bulge},${a.y} ${x + bulge},${b.y} ${x},${b.y}`;
+      } else {
+        const dir = a.x > b.x ? -1 : 1;
+        const x1 = a.x + dir * NODE_W / 2, x2 = b.x - dir * NODE_W / 2, bend = Math.max(30, Math.abs(x2 - x1) / 2);
+        path = `M${x1},${a.y} C${x1 + dir * bend},${a.y} ${x2 - dir * bend},${b.y} ${x2},${b.y}`;
+      }
+      const p = el('path', { class: 'edge' + (explicit ? '' : ' syn'), d: path });
+      p.ends = [elOf[side].get(s), elOf[side].get(d)];
+      p.ends.forEach((g) => edgesOf.get(g).push(p));
+      $('edges').append(p);
+    }
+  }
+
+  const xs = cols.map((c) => c.x).concat(0);
+  const lowest = centred ? ((tallest - 1) / 2) * ROW : (tallest - 1) * ROW;
+  bbox = { x0: Math.min(...xs) - NODE_W / 2, x1: Math.max(...xs) + NODE_W / 2, y0: top - 60, y1: lowest + NODE_H };
+  fit();
+}
+
+function row(dl, label, value, mono) {
+  if (value === null || value === undefined || value === '') return;
+  dl.append(h('dt', { textContent: label }), h('dd', mono ? { className: 'mono' } : {}, value));
+}
+// The dataset only records source files for Mathlib's own modules.
+function sourceUrl(module) {
+  if (!module || !module.startsWith('Mathlib.')) return null;
+  return 'https://github.com/leanprover-community/mathlib4/blob/master/' + module.split('.').map(encodeURIComponent).join('/') + '.lean';
+}
+// Lean source as coloured tokens; names that are dependencies of the focus become links
+// that focus on that dependency, and hovering one lights up its node in the graph.
+let nodeByName = new Map(), focusNode = null;
+
+// Picks out one dependency in the graph while its name is hovered in the code: that node is
+// filled, its edge to the focus is drawn bold, everything else fades, and the view moves if
+// the node is off screen. When the node is not drawn at all, the proof header says why.
+function spotlight(name, on) {
+  const g = nodeByName.get(name);
+  $('proof-hint').textContent = on && !g
+    ? `${name} is not drawn` + (readState().e ? ' — turn off “explicit only” to see it' : '')
+    : '';
+  svg.querySelectorAll('.pick').forEach((e) => e.classList.remove('pick'));
+  svg.classList.toggle('spot', on && !!g);
+  if (!on || !g) return;
+  g.classList.add('pick');
+  for (const p of g.edgeEls || []) if (p.ends.includes(focusNode)) p.classList.add('pick');
+  const box = svg.getBoundingClientRect(), r = g.getBoundingClientRect(), pad = 24, below = 70; // clear of the legend
+  let dx = 0, dy = 0;
+  if (r.left < box.left + pad) dx = box.left + pad - r.left;
+  else if (r.right > box.right - pad) dx = box.right - pad - r.right;
+  if (r.top < box.top + pad) dy = box.top + pad - r.top;
+  else if (r.bottom > box.bottom - below) dy = box.bottom - below - r.bottom;
+  if (dx || dy) { cam.x += dx; cam.y += dy; applyCam(); }
+}
+function renderLean(code, deps, focusName) {
+  const link = Lean.linker(deps || [], focusName);
+  const frag = document.createDocumentFragment();
+  for (const tok of Lean.tokenize(code)) {
+    if (tok.type === 'text') frag.append(tok.text);
+    else if (tok.type !== 'ident') frag.append(h('span', { className: tok.type, textContent: tok.text }));
+    else for (const seg of link(tok.text)) {
+      if (!seg.target) { frag.append(seg.text); continue; }
+      const a = h('a', { className: 'dep', href: '#n=' + encodeURIComponent(seg.target), title: seg.target, textContent: seg.text });
+      a.addEventListener('click', (e) => { e.preventDefault(); go({ n: seg.target }); });
+      a.addEventListener('pointerenter', () => spotlight(seg.target, true));
+      a.addEventListener('pointerleave', () => spotlight(seg.target, false));
+      a.addEventListener('focus', () => spotlight(seg.target, true));
+      a.addEventListener('blur', () => spotlight(seg.target, false));
+      frag.append(a);
+    }
+  }
+  return frag;
+}
+
+// The panel below the graph: the proof (or a definition's body) of the focused declaration.
+function showProof(p) {
+  const panel = $('proof'), wasHidden = panel.hidden;
+  panel.hidden = !p;
+  if (!p) $('proof-code').replaceChildren();
+  if (p) {
+    $('proof-title').textContent = p.title;
+    $('proof-name').textContent = p.name;
+    $('proof-code').replaceChildren(renderLean(p.body, p.deps, p.name));
+    panel.querySelector('pre').scrollTop = 0;
+  }
+  if (wasHidden !== panel.hidden) fit(); // the graph area changed height
+}
+$('proof-toggle').onclick = (e) => {
+  const collapsed = $('proof').classList.toggle('collapsed');
+  e.target.textContent = collapsed ? 'Show' : 'Hide';
+  e.target.setAttribute('aria-expanded', String(!collapsed));
+  fit();
+};
+
+// The graph keeps only the top-ranked dependencies, which are the generic ones. Once the
+// source is known, make sure every dependency it names is drawn as well.
+async function pinNamed(f, seq) {
+  const named = [...new Set([...document.querySelectorAll('#panel a.dep, #proof a.dep')].map((a) => a.title))];
+  if (seq !== loadSeq || !named.some((n) => !nodeByName.has(n))) return;
+  const state = readState();
+  try {
+    const res = await fetch('/api/node', {
+      method: 'POST',
+      body: JSON.stringify({ name: f.name, depth: state.d, explicit: state.e, limit: state.l, pin: named }),
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    if (seq === loadSeq) draw(data, state);
+  } catch { /* the graph without the extra nodes is still correct */ }
+}
+
+// The statement typeset as mathematics, or null when it cannot be (a structure, a statement
+// the converter does not understand, KaTeX not loaded, or LaTeX that KaTeX rejects).
+function renderMath(statement, name, context) {
+  const tex = window.LeanLatex && window.katex ? LeanLatex.toLatex(statement, name, context) : null;
+  if (!tex) return null;
+  const box = h('div', { className: 'tex' }, h('span', { className: 'kind', textContent: tex.kind + '. ' }));
+  try {
+    for (const part of tex.parts) {
+      if ('text' in part) { box.append(part.text); continue; }
+      const span = h('span', part.display ? { className: 'display' } : {});
+      katex.render(part.math, span, { displayMode: !!part.display, throwOnError: true, strict: false });
+      box.append(span);
+    }
+  } catch { return null; }
+  const copy = h('button', { type: 'button', textContent: 'Copy LaTeX' });
+  copy.onclick = async () => {
+    try { await navigator.clipboard.writeText(tex.source); copy.textContent = 'Copied'; }
+    catch { copy.textContent = 'Copy failed'; }
+    setTimeout(() => (copy.textContent = 'Copy LaTeX'), 1200);
+  };
+  box.append(copy);
+  return box;
+}
+
+// Fills `box` with the declaration's Lean statement, read from its source file on GitHub;
+// the proof goes to the panel below the graph.
+const WHY_NOT = {
+  not_in_file: 'Not written out in the source file. Lean probably generated this declaration (from a structure, an attribute such as @[simps] or @[to_additive], or an unnamed instance).',
+  file_missing: 'The source file is no longer at this path on Mathlib’s master branch.',
+  fetch_failed: 'Couldn’t download the source file from GitHub.',
+};
+async function loadStatement(f, box, srcLink) {
+  if (!sourceUrl(f.file_module)) return showProof(null); // Lean core: the dataset has no source file
+  const seq = loadSeq;
+  const note = (text) => h('p', { className: 'note', textContent: text });
+  box.replaceChildren(h('h3', { textContent: 'Statement' }), note('Loading from GitHub…'));
+  let r;
+  try {
+    const res = await fetch('/api/source?name=' + encodeURIComponent(f.name));
+    if (!res.ok) throw new Error();
+    r = await res.json();
+  } catch { r = { found: false, reason: 'fetch_failed' }; }
+  if (seq !== loadSeq) return;
+  const kids = [h('h3', { textContent: 'Statement' })];
+  if (r.found) {
+    if (r.doc) kids.push(h('p', { className: 'doc', textContent: r.doc }));
+    const math = renderMath(r.statement, f.name, r.context);
+    if (math) kids.push(math);
+    kids.push(h('pre', {}, h('code', {}, renderLean(r.statement, r.deps, f.name))));
+    kids.push(note(`Line ${fmt(r.line)} on today’s master branch, which may differ from the February 2026 snapshot behind the graph.`));
+    if (srcLink) srcLink.href = r.url;
+  } else kids.push(note(WHY_NOT[r.reason] || WHY_NOT.fetch_failed));
+  box.replaceChildren(...kids);
+  const done = () => pinNamed(f, seq);
+  setTimeout(done, 0);
+  showProof(r.found && r.body ? { title: f.kind === 'theorem' ? 'Proof' : 'Definition', name: f.name, body: r.body, deps: r.deps } : null);
+}
+function drawPanel(data) {
+  const f = data.focus;
+  const copy = h('button', { type: 'button', textContent: 'Copy name' });
+  copy.onclick = async () => {
+    try { await navigator.clipboard.writeText(f.name); copy.textContent = 'Copied'; }
+    catch { copy.textContent = 'Copy failed'; }
+    setTimeout(() => (copy.textContent = 'Copy name'), 1200);
+  };
+  const dot = h('span', { className: 'dot' });
+  dot.style.background = kindColor(f.kind);
+  const dl = h('dl');
+  row(dl, 'Namespace', f.module, true);
+  const src = sourceUrl(f.file_module);
+  const srcLink = src && h('a', { href: src, target: '_blank', rel: 'noopener', textContent: f.file_module });
+  row(dl, 'Source file', srcLink || f.file_module, true);
+  const statement = h('div');
+  loadStatement(f, statement, srcLink);
+  if (f.out_degree !== null) row(dl, 'Depends on', `${fmt(f.out_degree)} declarations`);
+  if (f.in_degree !== null) row(dl, 'Used by', `${fmt(f.in_degree)} declarations`);
+  if (f.kind) row(dl, 'PageRank', Number(f.pagerank).toExponential(2));
+  if (f.dag_layer !== null) row(dl, 'DAG layer', f.dag_layer === -1 ? 'in a cycle' : String(f.dag_layer));
+  if (f.is_tactic_proof) row(dl, 'Proof', `tactic proof, ${fmt(f.tactic_count ?? 0)} tactic${f.tactic_count === 1 ? '' : 's'}` + (f.top_tactic ? `, mostly ${f.top_tactic}` : ''));
+  if (f.is_instance) row(dl, 'Instance of', f.instance_class || 'a typeclass', true);
+  if (f.to_additive_pair && f.pair_exists) {
+    const b = h('button', { type: 'button', className: 'linklike', textContent: f.to_additive_pair });
+    b.onclick = () => go({ n: f.to_additive_pair });
+    row(dl, 'Additive pair', b);
+  } else row(dl, 'Additive pair', f.to_additive_pair, true); // most pairs are not nodes in this dataset
+  const docs = h('a', {
+    href: 'https://leanprover-community.github.io/mathlib4_docs/find/?pattern=' + encodeURIComponent(f.name) + '#doc',
+    target: '_blank', rel: 'noopener', textContent: 'Mathlib docs ↗',
+  });
+  $('panel').replaceChildren(
+    h('h2', { textContent: f.name }),
+    h('div', { className: 'kind' }, dot, f.kind || 'no metadata in dataset'),
+    h('div', { className: 'actions' }, copy, docs),
+    statement,
+    dl,
+    h('p', { className: 'note', textContent:
+      'Counts above are for the whole graph, including dependencies Lean filled in by itself. ' +
+      'Arrows point from a declaration to what it depends on. Click a node to focus on it; ' +
+      'drag or scroll to move, pinch or ⌘/Ctrl-scroll to zoom.' })
+  );
+}
+
+// ---------- loading ----------
+let loadSeq = 0;
+async function load() {
+  const state = readState();
+  $('explicit').checked = state.e;
+  $('limit').value = String(state.l);
+  for (const b of $('depth').children) b.setAttribute('aria-pressed', String(Number(b.dataset.v) === state.d));
+  const seq = ++loadSeq;
+  if (!state.n) {
+    clearGraph();
+    showProof(null);
+    $('panel').replaceChildren(h('p', { className: 'note', textContent: 'Details of the focused declaration appear here.' }));
+    document.title = 'Mathlib graph navigator';
+    showMessage(h('h2', { textContent: 'Pick a declaration to explore' }),
+      h('p', { textContent: 'Search above, or start from one of these:' }), h('p', {}, ...exampleLinks()));
+    return;
+  }
+  let res, data;
+  try {
+    res = await fetch(`/api/node?name=${encodeURIComponent(state.n)}&depth=${state.d}&explicit=${state.e ? 1 : 0}&limit=${state.l}`);
+    data = await res.json();
+  } catch {
+    if (seq !== loadSeq) return;
+    clearGraph();
+    $('panel').replaceChildren();
+    return showMessage(h('h2', { textContent: 'Can’t reach the server' }), h('p', { textContent: 'Check that “node server.js” is still running, then reload.' }));
+  }
+  if (seq !== loadSeq) return;
+  if (!res.ok) {
+    clearGraph();
+    $('panel').replaceChildren();
+    showProof(null);
+    document.title = 'Mathlib graph navigator';
+    return showMessage(
+      h('h2', { textContent: res.status === 404 ? 'No declaration with that name' : 'Something went wrong' }),
+      h('p', {}, h('code', { textContent: state.n }), res.status === 404 ? ' is not in this Mathlib snapshot. Names are case-sensitive; try the search.' : ` (server answered ${res.status}).`));
+  }
+  showMessage();
+  document.title = `${data.focus.name} — Mathlib graph navigator`;
+  draw(data, state);
+  drawPanel(data);
+}
+window.addEventListener('hashchange', load);
+window.addEventListener('resize', () => bbox && fit());
+
+// ---------- controls ----------
+$('explicit').onchange = (e) => go({ e: e.target.checked });
+$('limit').onchange = (e) => go({ l: Number(e.target.value) });
+$('depth').onclick = (e) => { if (e.target.dataset.v) go({ d: Number(e.target.dataset.v) }); };
+$('legend').append(...KINDS.map((k) => {
+  const d = h('span', { className: 'dot' });
+  d.style.background = kindColor(k);
+  return h('span', {}, d, k);
+}));
+
+// ---------- search ----------
+const q = $('q'), results = $('results');
+let items = [], itemsFor = null, active = -1, searchSeq = 0, timer = 0, pickFirst = false;
+const closeResults = () => { results.hidden = true; active = -1; };
+function renderResults(note) {
+  results.replaceChildren(...(items.length ? items.map((n, i) => {
+    const d = h('span', { className: 'dot' });
+    d.style.background = kindColor(n.kind);
+    const li = h('li', { role: 'option', className: i === active ? 'active' : '' }, d,
+      h('span', { className: 'nm', textContent: n.name }), h('span', { className: 'meta', textContent: n.kind || '' }));
+    li.setAttribute('aria-selected', String(i === active));
+    li.addEventListener('pointerdown', (e) => { e.preventDefault(); choose(n.name); });
+    return li;
+  }) : [h('li', { className: 'none', textContent: note || 'No matches' })]));
+  results.hidden = false;
+  results.querySelector('.active')?.scrollIntoView({ block: 'nearest' });
+}
+function choose(name) {
+  clearTimeout(timer); searchSeq++; pickFirst = false; // drop any search still on its way
+  q.value = ''; itemsFor = null; closeResults(); q.blur(); go({ n: name });
+}
+async function runSearch() {
+  const term = q.value.trim(), seq = ++searchSeq;
+  if (!term) return closeResults();
+  try {
+    const res = await fetch('/api/search?limit=15&q=' + encodeURIComponent(term));
+    if (!res.ok) throw new Error();
+    const found = await res.json();
+    if (seq !== searchSeq) return;
+    items = found; itemsFor = term; active = found.length ? 0 : -1;
+    if (pickFirst && found.length) return choose(found[0].name);
+    pickFirst = false;
+    renderResults();
+  } catch {
+    if (seq !== searchSeq) return;
+    items = []; itemsFor = null; active = -1; pickFirst = false;
+    renderResults('Search failed — is the server running?');
+  }
+}
+q.addEventListener('input', () => { pickFirst = false; clearTimeout(timer); timer = setTimeout(runSearch, 150); });
+q.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') { closeResults(); q.blur(); }
+  else if (e.key === 'Enter') {
+    const term = q.value.trim();
+    if (!term) return;
+    // Only trust the list if it was fetched for exactly what is typed; otherwise search now and take the best match.
+    if (itemsFor === term && !results.hidden && items[active]) choose(items[active].name);
+    else if (itemsFor !== term) { pickFirst = true; clearTimeout(timer); runSearch(); }
+  } else if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && items.length && !results.hidden && itemsFor === q.value.trim()) {
+    e.preventDefault();
+    active = (active + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+    renderResults();
+  }
+});
+q.addEventListener('blur', closeResults);
+q.addEventListener('focus', () => { if (q.value.trim()) runSearch(); });
+window.addEventListener('keydown', (e) => {
+  if (e.key === '/' && document.activeElement !== q && !e.metaKey && !e.ctrlKey) { e.preventDefault(); q.focus(); }
+});
+
+// Open on a default declaration when the address names none.
+const DEFAULT_FOCUS = 'irrational_sqrt_two';
+if (!readState().n) history.replaceState(null, '', '#n=' + encodeURIComponent(DEFAULT_FOCUS));
+load();
+</script>
+</body>
+</html>
