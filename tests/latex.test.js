@@ -349,3 +349,12 @@ test('the statement is never restated: an angle of π/2 stays an angle, not "ort
   assert.equal(expr('inner x y = 0 ↔ angle x y = π / 2'), '\\mathrm{inner}\\,x\\,y = 0 \\iff \\angle\\left(x, y\\right) = \\frac{\\pi}{2}');
   assert.doesNotMatch(expr('‖x - y‖ * ‖x - y‖ = ‖x‖ * ‖x‖ + ‖y‖ * ‖y‖ ↔ angle x y = π / 2'), /perp/);
 });
+
+test('inner products: double angle brackets, with the scalar field as a subscript', () => {
+  assert.equal(expr('⟪x, y⟫_ℝ = 0'), '\\langle x, y \\rangle_{\\mathbb{R}} = 0');
+  assert.equal(expr('⟪x - y, z⟫_𝕜'), '\\langle x - y, z \\rangle_{\\Bbbk}');
+  assert.equal(expr('⟪x, y⟫ = ⟪y, x⟫'), '\\langle x, y \\rangle = \\langle y, x \\rangle');
+  assert.equal(expr('⟪x, x⟫_ℝ = ‖x‖ * ‖x‖'), '\\langle x, x \\rangle_{\\mathbb{R}} = \\| x \\|^{2}');
+  const r = toLatex('theorem t (x y : F) :\n    ‖x - y‖ * ‖x - y‖ = ‖x‖ * ‖x‖ + ‖y‖ * ‖y‖ ↔ ⟪x, y⟫_ℝ = 0', 't', '{F : Type*} [SeminormedAddCommGroup F] [InnerProductSpace ℝ F]');
+  assert.equal(r.parts.at(-1).math, '\\| x - y \\|^{2} = \\| x \\|^{2} + \\| y \\|^{2} \\iff \\langle x, y \\rangle_{\\mathbb{R}} = 0');
+});

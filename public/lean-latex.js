@@ -12,7 +12,7 @@
   const PART = "[\\p{L}_][\\p{L}\\p{Nd}_'!?\\u2080-\\u209C\\u1D62-\\u1D6A]*";
   const IDENT = new RegExp(`${PART}(?:\\.${PART})*`, 'uy');
   const NUMBER = /\d+(?:\.\d+)?/y;
-  const CLOSER = { '(': ')', '[': ']', '{': '}', '⟨': '⟩', '⦃': '⦄' };
+  const CLOSER = { '(': ')', '[': ']', '{': '}', '⟨': '⟩', '⦃': '⦄', '⟪': '⟫' };
   const CLOSERS = new Set(Object.values(CLOSER));
   // Longest first: tokens that must not be split.
   const MULTI = ['ℝ≥0∞', 'ℝ≥0', 'Type*', 'Sort*', "⁻¹'", '⁻¹', '-ᵥ', '+ᵥ', '<->', ':=', '=>', '->', '<=', '>=', '..'];
@@ -270,6 +270,12 @@
         else if (node.open === '[') atom(`\\left[${body}\\right]`);
         else if (node.open === '⟨') atom(`\\langle ${body} \\rangle`);
         else if (node.open === '‖') atom(`\\| ${body} \\|`);
+        else if (node.open === '⟪') {
+          // An inner product ⟪x, y⟫, optionally tagged with its scalar field: ⟪x, y⟫_ℝ.
+          const tagged = items[i + 1] && items[i + 1].t === 'sym' && items[i + 1].v === '_' && isOperand(items[i + 2]);
+          atom(`\\langle ${body.replace(/,\\;/g, ',')} \\rangle` + (tagged ? `_{${inner(items[i + 2])}}` : ''));
+          if (tagged) i += 2;
+        }
         else atom(`\\{ ${body} \\}`);
       } else if (node.t === 'num') atom(node.v);
       else if (node.t === 'sup') postfix(`^{${node.v}}`);
@@ -382,7 +388,7 @@
     for (;;) {
       while (/\s/.test(s[i] || '')) i++;
       const open = s[i];
-      if (!(open in CLOSER) || open === '⟨') break;
+      if (!(open in CLOSER) || open === '⟨' || open === '⟪') break;
       let depth = 0, j = i;
       for (; j < s.length; j++) {
         if (s[j] in CLOSER) depth++;
