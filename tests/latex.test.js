@@ -3,9 +3,9 @@ const assert = require('node:assert/strict');
 const { expr, toLatex } = require('../public/lean-latex.js');
 
 test('expr: symbols, application, square roots', () => {
-  assert.equal(expr('Irrational (√2)'), '\\mathrm{Irrational}\\,\\left(\\sqrt{2}\\right)');
+  assert.equal(expr('Irrational (√2)'), '\\sqrt{2} \\text{ is irrational}');
   assert.equal(expr('0 ≤ √x'), '0 \\le \\sqrt{x}');
-  assert.equal(expr('Nat.Prime p'), '\\mathrm{Nat.Prime}\\,p');
+  assert.equal(expr('Nat.Prime p'), 'p \\text{ is prime}');
   assert.equal(expr('mul_self_nonneg'), '\\mathrm{mul\\_self\\_nonneg}');
   assert.equal(expr('a * a = b * b ↔ a = b ∨ a = -b'), 'a^{2} = b^{2} \\iff a = b \\lor a = - b');
   assert.equal(expr('finrank K L ≤ #K'), '\\mathrm{finrank}\\,K\\,L \\le \\# K');
@@ -39,19 +39,19 @@ test('toLatex: variables, hypotheses and conclusion', () => {
   assert.equal(r.kind, 'Theorem');
   assert.deepEqual(r.parts, [
     { text: 'Let ' }, { math: 'p \\in \\mathbb{N}' },
-    { text: '. Assume ' }, { math: '\\mathrm{Nat.Prime}\\,p' }, { text: '. Then' },
-    { math: '\\mathrm{Irrational}\\,\\left(\\sqrt{p}\\right)', display: true },
+    { text: '. Assume ' }, { math: 'p \\text{ is prime}' }, { text: '. Then' },
+    { math: '\\sqrt{p} \\text{ is irrational}', display: true },
   ]);
   assert.equal(r.source,
     '\\begin{theorem}[\\texttt{Nat.Prime.irrational\\_sqrt}]\n' +
-    'Let $p \\in \\mathbb{N}$. Assume $\\mathrm{Nat.Prime}\\,p$. Then\n' +
-    '\\[ \\mathrm{Irrational}\\,\\left(\\sqrt{p}\\right) \\]\n' +
+    'Let $p \\in \\mathbb{N}$. Assume $p \\text{ is prime}$. Then\n' +
+    '\\[ \\sqrt{p} \\text{ is irrational} \\]\n' +
     '\\end{theorem}');
 });
 
 test('toLatex: a statement with no binders is just the conclusion', () => {
   const r = toLatex('/-- doc -/\ntheorem irrational_sqrt_two : Irrational (√2)', 'irrational_sqrt_two');
-  assert.deepEqual(r.parts, [{ math: '\\mathrm{Irrational}\\,\\left(\\sqrt{2}\\right)', display: true }]);
+  assert.deepEqual(r.parts, [{ math: '\\sqrt{2} \\text{ is irrational}', display: true }]);
 });
 
 test('toLatex: attributes, modifiers, instances, grouped names, default values', () => {
@@ -61,7 +61,7 @@ test('toLatex: attributes, modifiers, instances, grouped names, default values',
   );
   assert.equal(
     r.parts.slice(0, -1).map((p) => ('text' in p ? p.text : `$${p.math}$`)).join(''),
-    'Let $R$ be a non-unital non-associative ring without zero divisors. Let $a, b \\in R$, $q \\in \\mathbb{Q}$. Assume $\\mathrm{Commute}\\,a\\,b$. Then'
+    'Let $R$ be a non-unital non-associative ring without zero divisors. Let $a, b \\in R$, $q \\in \\mathbb{Q}$. Assume $a \\text{ and } b \\text{ commute}$. Then'
   );
   assert.equal(r.parts.at(-1).display, true);
 });
@@ -79,7 +79,7 @@ test('toLatex: definitions show their type; structures and unparsable input give
   assert.equal(d.kind, 'Definition');
   assert.deepEqual(d.parts, [
     { text: 'Let ' }, { math: 'x \\in \\mathbb{R}' }, { text: '. Then' },
-    { math: '\\mathrm{Real.sqrt} : \\mathbb{R}', display: true },
+    { math: '\\sqrt{x} \\in \\mathbb{R}', display: true },
   ]);
   assert.match(d.source, /^\\begin\{definition\}/);
   assert.equal(toLatex('structure Point (α : Type) where\n  x : α', 'Point'), null);
@@ -89,7 +89,7 @@ test('toLatex: definitions show their type; structures and unparsable input give
 });
 
 test('expr: preimage notation does not produce a double superscript', () => {
-  assert.equal(expr("f ⁻¹' s ∈ l"), 'f^{-1}\\,s \\in l');
+  assert.equal(expr("f ⁻¹' s ∈ l"), 'f^{-1}\\left(s\\right) \\in l');
   assert.equal(expr("x' ⁻¹"), "x'^{-1}");
 });
 
@@ -106,7 +106,7 @@ test('membership inside quantifiers', () => {
   assert.equal(expr('∃ q : ℚ, x < q ∧ q < y'), '\\exists q \\in \\mathbb{Q},\\; x < q < y');
   assert.equal(expr('∀ (x : ℝ) (f : ℕ → ℝ), f 0 ≤ x'), '\\forall \\left(x \\in \\mathbb{R}\\right)\\,\\left(f : \\mathbb{N} \\to \\mathbb{R}\\right),\\; f\\,0 \\le x');
   assert.equal(expr('∀ ε > 0, (x : ℝ) ≤ ε'), '\\forall \\varepsilon > 0,\\; \\left(x : \\mathbb{R}\\right) \\le \\varepsilon'); // a type ascription keeps its colon
-  assert.equal(expr('∀ α : Type*, Nonempty α'), '\\forall \\alpha : \\mathrm{Type},\\; \\mathrm{Nonempty}\\,\\alpha');
+  assert.equal(expr('∀ α : Type*, Nonempty α'), '\\forall \\alpha : \\mathrm{Type},\\; \\alpha \\text{ is nonempty}');
 });
 
 test('chains: `a < b ∧ b < c` is written a < b < c', () => {
@@ -193,7 +193,7 @@ test('context: only the names actually used are introduced, and the statement\'s
 test('distance: d(x, y) in general, |AB| for points in Euclidean geometry', () => {
   assert.equal(expr('dist x y ≤ dist x z + dist z y'), 'd\\left(x, y\\right) \\le d\\left(x, z\\right) + d\\left(z, y\\right)');
   assert.equal(expr('dist (f x) y < ε'), 'd\\left(f\\,x, y\\right) < \\varepsilon');
-  assert.equal(expr('Continuous dist'), '\\mathrm{Continuous}\\,\\mathrm{dist}'); // not applied to two points
+  assert.equal(expr('Continuous dist'), '\\mathrm{dist} \\text{ is continuous}'); // not applied to two points
   const geo = toLatex('theorem t (p₁ p₂ p₃ : P) : dist p₁ p₃ * dist p₁ p₃ = dist p₁ p₂ * dist p₁ p₂ ↔ dist (midpoint ℝ p₁ p₂) p₃ = 0', 'EuclideanGeometry.t');
   assert.equal(geo.parts.at(-1).math,
     '\\lvert p_{1} p_{3} \\rvert^{2} = \\lvert p_{1} p_{2} \\rvert^{2} \\iff d\\left(\\mathrm{midpoint}\\,\\mathbb{R}\\,p_{1}\\,p_{2}, p_{3}\\right) = 0');
@@ -215,7 +215,7 @@ test('phrasebook: typeclasses become sentences about their subject', () => {
   );
   assert.equal(
     prose('theorem t [NonUnitalNonAssocRing R] [NoZeroDivisors R] {a b : R} (h : Commute a b) : a = b'),
-    'Let $R$ be a non-unital non-associative ring without zero divisors. Let $a, b \\in R$. Assume $\\mathrm{Commute}\\,a\\,b$. Then'
+    'Let $R$ be a non-unital non-associative ring without zero divisors. Let $a, b \\in R$. Assume $a \\text{ and } b \\text{ commute}$. Then'
   );
 });
 
@@ -240,7 +240,7 @@ test('phrasebook: plain type variables, hypotheses in disguise, and unknown clas
   assert.equal(prose('theorem t {α β γ : Type*} (f : α → β) (g : β → γ) : g ∘ f = g ∘ f'),
     'Let $\\alpha$, $\\beta$ and $\\gamma$ be types. Let $f : \\alpha \\to \\beta$, $g : \\beta \\to \\gamma$. Then');
   assert.equal(prose('theorem t (n : ℕ) [NeZero n] [Fact (Nat.Prime n)] : n = n'),
-    'Let $n \\in \\mathbb{N}$. Assume $n \\ne 0$ and $\\mathrm{Nat.Prime}\\,n$. Then');
+    'Let $n \\in \\mathbb{N}$. Assume $n \\ne 0$ and $n \\text{ is prime}$. Then');
   // not in the book: the Lean name is kept
   assert.equal(prose('theorem t {K : Type*} [Field K] [Frobnicable K] [Module K (K × K)] (x : K) : x = x'),
     'Let $K$ be a field. Let $x \\in K$, with $\\mathrm{Frobnicable}\\,K$, $\\mathrm{Module}\\,K\\,\\left(K \\times K\\right)$. Then');
@@ -249,7 +249,7 @@ test('phrasebook: plain type variables, hypotheses in disguise, and unknown clas
 
 test('a binder named like a fact (with an underscore) is a hypothesis', () => {
   assert.equal(prose('theorem t (f : α → ℝ) (f_mble : Measurable f) (x₀ : α) : f x₀ = f x₀'),
-    'Let $f : \\alpha \\to \\mathbb{R}$, $x_{0} \\in \\alpha$. Assume $\\mathrm{Measurable}\\,f$. Then');
+    'Let $f : \\alpha \\to \\mathbb{R}$, $x_{0} \\in \\alpha$. Assume $f \\text{ is measurable}$. Then');
 });
 
 test('phrasebook: universe annotations on a class are ignored', () => {
@@ -262,7 +262,7 @@ test('angles: three named points are set tightly, anything else gets brackets', 
   assert.equal(expr('∠ (midpoint ℝ a b) c d'), '\\angle\\left(\\mathrm{midpoint}\\,\\mathbb{R}\\,a\\,b, c, d\\right)');
   assert.equal(expr('angle x y = π / 3'), '\\angle\\left(x, y\\right) = \\frac{\\pi}{3}');
   assert.equal(expr('InnerProductGeometry.angle x (y - z) < π'), '\\angle\\left(x, y - z\\right) < \\pi');
-  assert.equal(expr('Continuous angle'), '\\mathrm{Continuous}\\,\\mathrm{angle}');
+  assert.equal(expr('Continuous angle'), '\\mathrm{angle} \\text{ is continuous}');
 });
 
 test('fractions: a division is typeset as a fraction when its two sides are clear', () => {
@@ -293,7 +293,7 @@ test('intervals are written as intervals', () => {
   assert.equal(expr('Ico a b ⊆ Ioc c d'), '\\left[a, b\\right) \\subseteq \\left(c, d\\right]');
   assert.equal(expr('Set.Ioi 0 ∪ Set.Iic a'), '\\left(0, +\\infty\\right) \\cup \\left(-\\infty, a\\right]');
   assert.equal(expr('Set.Ici a ∩ Set.Iio b'), '\\left[a, +\\infty\\right) \\cap \\left(-\\infty, b\\right)');
-  assert.equal(expr('Continuous Set.Icc'), '\\mathrm{Continuous}\\,\\mathrm{Set.Icc}'); // not applied to its bounds
+  assert.equal(expr('Continuous Set.Icc'), '\\mathrm{Set.Icc} \\text{ is continuous}'); // not applied to its bounds
 });
 
 test('French / Belgian notation: hat angles, outward brackets, slanted inequalities', () => {
@@ -362,12 +362,11 @@ test('inner products: double angle brackets, with the scalar field as a subscrip
 test('thesis: the conclusion alone, for a node in the graph', () => {
   assert.equal(toLatex('theorem div_pos (ha : 0 < a) (hb : 0 < b) : 0 < a / b', 'div_pos').thesis, '0 < \\frac{a}{b}');
   assert.equal(toLatex('lemma foo (x : ℝ) : 0 ≤ x ^ 2', 'foo').thesis, '0 \\le x^{2}');
-  assert.equal(toLatex('noncomputable def sqrt (x : ℝ) : ℝ', 'Real.sqrt').thesis, null); // a definition states nothing
   assert.equal(toLatex('theorem t : ∠ A B C = π / 2', 'EuclideanGeometry.t', '', { notation: 'fr' }).thesis, '\\widehat{A B C} = \\frac{\\pi}{2}');
 });
 
 test('expr: script capitals such as the neighbourhood filter 𝓝', () => {
-  assert.equal(expr('Tendsto f l (𝓝 a)'), '\\mathrm{Tendsto}\\,f\\,l\\,\\left(\\mathcal{N}\\,a\\right)');
+  assert.equal(expr('Tendsto f l (𝓝 a)'), 'f \\to a \\text{ along } l');
   assert.equal(expr('s ∈ 𝓤 α'), 's \\in \\mathcal{U}\\,\\alpha');
   assert.equal(expr('𝓝[s] a'), '\\mathcal{N}\\,\\left[s\\right]\\,a');
 });
@@ -375,4 +374,193 @@ test('expr: script capitals such as the neighbourhood filter 𝓝', () => {
 test('a variable of type ℝ≥0 is a variable, not a hypothesis', () => {
   assert.equal(prose('theorem coe_nonneg (r : ℝ≥0) (x : ℝ≥0∞) : (0 : ℝ) ≤ r'),
     'Let $r \\in \\mathbb{R}_{\\ge 0}$, $x \\in \\overline{\\mathbb{R}}_{\\ge 0}$. Then');
+});
+
+
+test('definitions: the thesis is the signature, what the thing is, not how it is computed', () => {
+  const thesis = (stmt, name = 'n', ctx) => toLatex(stmt, name, ctx).thesis;
+  assert.equal(thesis('noncomputable def arg (x : ℂ) : ℝ', 'Complex.arg'), '\\arg : \\mathbb{C} \\to \\mathbb{R}');
+  assert.equal(thesis('def angle (x y : V) : ℝ', 'InnerProductGeometry.angle'), '\\mathrm{angle} : V \\times V \\to \\mathbb{R}');
+  assert.equal(thesis('def image {α β : Type*} (f : α → β) (s : Set α) : Set β', 'Set.image'),
+    '\\mathrm{image} : \\left(\\alpha \\to \\beta\\right) \\times \\mathrm{Set}\\,\\alpha \\to \\mathrm{Set}\\,\\beta');
+  assert.equal(thesis('def Prime (p : ℕ) : Prop', 'Nat.Prime'), '\\mathrm{Prime} : \\mathbb{N} \\to \\mathrm{Prop}');
+  assert.equal(thesis('noncomputable def pi : ℝ', 'Real.pi'), '\\pi \\in \\mathbb{R}');
+  // a later argument whose type mentions an earlier one cannot be written as a product
+  assert.equal(thesis('def get (l : List α) (i : Fin l.length) : α', 'List.get'), '\\mathrm{get}\\,l\\,i \\in \\alpha');
+  assert.equal(toLatex('def Irrational (x : ℝ)', 'Irrational'), null); // no stated type: nothing to show
+});
+
+test('definitions: focused, the statement introduces the arguments and gives the result type', () => {
+  const r = toLatex('noncomputable def arg (x : ℂ) : ℝ', 'Complex.arg');
+  assert.equal(r.kind, 'Definition');
+  assert.equal(r.parts.slice(0, -1).map((p) => ('text' in p ? p.text : `$${p.math}$`)).join(''), 'Let $x \\in \\mathbb{C}$. Then');
+  assert.equal(r.parts.at(-1).math, '\\arg\\,x \\in \\mathbb{R}');
+});
+
+test('expr: a projection applies to the bracket just before it', () => {
+  assert.equal(expr('(-x).fst / ‖x‖'), '\\frac{\\left(- x\\right).\\mathrm{fst}}{\\| x \\|}');
+  assert.equal(expr('Real.arcsin ((-x).im / ‖x‖) + π'), '\\arcsin\\,\\left(\\frac{\\operatorname{Im}\\left(- x\\right)}{\\| x \\|}\\right) + \\pi');
+  assert.equal(expr('(f x).1 ≤ (f x).2'), '\\left(f\\,x\\right).1 \\le \\left(f\\,x\\right).2');
+  assert.equal(expr('(a + b).foo_bar c'), '\\left(a + b\\right).\\mathrm{foo\\_bar}\\,c');
+});
+
+test('standard symbols: constants and elementary functions get their usual sign', () => {
+  assert.equal(expr('Real.pi'), '\\pi');
+  assert.equal(expr('2 * pi * r'), '2 \\cdot \\pi \\cdot r');
+  assert.equal(expr('Complex.exp (Complex.I * Real.pi) = -1'), '\\exp\\,\\left(i \\cdot \\pi\\right) = - 1');
+  assert.equal(expr('Real.sin x ^ 2 + Real.cos x ^ 2 = 1'), '\\left(\\sin\\,x\\right)^{2} + \\left(\\cos\\,x\\right)^{2} = 1');
+  assert.equal(expr('Real.log (x * y) = Real.log x + Real.log y'), '\\log\\,\\left(x \\cdot y\\right) = \\log\\,x + \\log\\,y');
+  assert.equal(expr('arcsin x + Real.arccos x = π / 2'), '\\arcsin\\,x + \\arccos\\,x = \\frac{\\pi}{2}');
+  assert.equal(expr('Real.arsinh (sinh x) = x'), '\\operatorname{arsinh}\\,\\left(\\sinh\\,x\\right) = x');
+  assert.equal(expr('Real.goldenRatio ^ 2 = Real.goldenRatio + 1'), '\\varphi^{2} = \\varphi + 1');
+});
+
+test('standard symbols: square root, absolute value, factorial, binomial, gcd, real and imaginary parts', () => {
+  assert.equal(expr('Real.sqrt (x ^ 2) = abs x'), '\\sqrt{x^{2}} = \\lvert x \\rvert');
+  assert.equal(expr('NNReal.sqrt x ≤ sqrt y'), '\\sqrt{x} \\le \\sqrt{y}');
+  assert.equal(expr('Nat.factorial (n + 1) = (n + 1) * Nat.factorial n'), '\\left(n + 1\\right)! = \\left(n + 1\\right) \\cdot n!');
+  assert.equal(expr('Nat.choose n k = Nat.choose n (n - k)'), '\\binom{n}{k} = \\binom{n}{n - k}');
+  assert.equal(expr('Nat.gcd a b ∣ Nat.lcm a b'), '\\gcd\\left(a, b\\right) \\mid \\operatorname{lcm}\\left(a, b\\right)');
+  assert.equal(expr('max a b = max b a'), '\\max\\left(a, b\\right) = \\max\\left(b, a\\right)');
+  assert.equal(expr('z.re ^ 2 + z.im ^ 2'), '\\operatorname{Re}\\left(z\\right)^{2} + \\operatorname{Im}\\left(z\\right)^{2}');
+  assert.equal(expr('(-x).im / ‖x‖'), '\\frac{\\operatorname{Im}\\left(- x\\right)}{\\| x \\|}');
+});
+
+test('standard symbols: only the standard meaning is replaced', () => {
+  assert.equal(expr('Finset.pi s t'), '\\mathrm{Finset.pi}\\,s\\,t'); // a different pi
+  assert.equal(expr('Filter.exp f'), '\\mathrm{Filter.exp}\\,f');
+  assert.equal(expr('Continuous Real.sqrt'), '\\sqrt{\\cdot} \\text{ is continuous}'); // not applied to anything
+  assert.equal(expr('Continuous Real.exp'), '\\exp \\text{ is continuous}');
+  assert.equal(expr('p.re'), '\\operatorname{Re}\\left(p\\right)');
+  assert.equal(expr('Foo.bar.re'), '\\mathrm{Foo.bar.re}'); // not a variable's real part
+});
+
+test('standard symbols in a definition\'s signature', () => {
+  assert.equal(toLatex('noncomputable def pi : ℝ', 'Real.pi').thesis, '\\pi \\in \\mathbb{R}');
+  assert.equal(toLatex('noncomputable def arg (x : ℂ) : ℝ', 'Complex.arg').thesis, '\\arg : \\mathbb{C} \\to \\mathbb{R}');
+  assert.equal(toLatex('noncomputable def sqrt (x : ℝ) : ℝ', 'Real.sqrt').thesis, '\\sqrt{\\cdot} : \\mathbb{R} \\to \\mathbb{R}');
+  assert.equal(toLatex('def exp (x : ℂ) : ℂ', 'Complex.exp').parts.at(-1).math, '\\exp\\,x \\in \\mathbb{C}');
+});
+
+test('standard symbols: a bare I is the imaginary unit only in a statement about complex numbers', () => {
+  assert.equal(toLatex('theorem exp_pi_mul_I : exp (π * I) = -1', 'Complex.exp_pi_mul_I').thesis, '\\exp\\,\\left(\\pi \\cdot i\\right) = - 1');
+  assert.equal(toLatex('theorem mem (I : Ideal R) (x : R) : x ∈ I', 'Ideal.mem').thesis, 'x \\in I');
+  assert.equal(expr('x ∈ I'), 'x \\in I');
+});
+
+test('abbreviations: a shorthand is shown as what it stands for', () => {
+  const abbrev = (stmt, body, name = 'n', ctx) => toLatex(stmt, name, ctx, { body });
+  const r = abbrev('abbrev ConstructibleSetData', ':= Finset (BasicConstructibleSetData R)', 'PrimeSpectrum.ConstructibleSetData');
+  assert.equal(r.kind, 'Abbreviation');
+  assert.equal(r.thesis, '\\mathrm{ConstructibleSetData} := \\mathrm{Finset}\\,\\left(\\mathrm{BasicConstructibleSetData}\\,R\\right)');
+  assert.equal(r.parts.at(-1).math, r.thesis);
+  const withArgs = abbrev('abbrev Short {α : Type*} (x : α) : α', ':= Hub x');
+  assert.equal(withArgs.thesis, '\\mathrm{Short}\\,x := \\mathrm{Hub}\\,x');
+  assert.equal(withArgs.parts.slice(0, -1).map((p) => ('text' in p ? p.text : `$${p.math}$`)).join(''), 'Let $\\alpha$ be a type. Let $x \\in \\alpha$. Write');
+});
+
+test('abbreviations: when the body is a program, or missing, the signature is shown as for a definition', () => {
+  const thesis = (body) => (toLatex('abbrev f (n : ℕ) : ℕ', 'f', '', { body }) || {}).thesis;
+  for (const body of [':= by\n  exact n', 'where\n  toFun := id', ':= { toFun := id }', ':= ⟨n, rfl⟩', ':=\n  let m := n + 1\n  m', ':= ' + 'n + '.repeat(120) + 'n', undefined]) {
+    assert.equal(thesis(body), 'f : \\mathbb{N} \\to \\mathbb{N}');
+  }
+  assert.equal(toLatex('abbrev T', 'T', '', { body: ':= by exact ℕ' }), null); // neither a formula nor a type
+  // a definition's or a theorem's body is never taken for its formula
+  assert.equal(toLatex('def f (n : ℕ) : ℕ', 'f', '', { body: ':= n + 1' }).thesis, 'f : \\mathbb{N} \\to \\mathbb{N}');
+  assert.equal(toLatex('theorem t : 1 = 1', 't', '', { body: ':= rfl' }).thesis, '1 = 1');
+});
+
+test('generated projections: worded from their name', () => {
+  const { projection } = require('../public/lean-phrases.js');
+  assert.deepEqual(projection('Semiring.toNonAssocSemiring', 'NonAssocSemiring'), { words: 'every semiring is a non-associative semiring' });
+  assert.deepEqual(projection('CategoryTheory.Category.toCategoryStruct', 'CategoryTheory.CategoryStruct'), { words: 'every `Category` is a `CategoryStruct`' });
+  assert.deepEqual(projection('Norm.norm', null), { tex: '\\| x \\|', words: 'norm' });
+  assert.deepEqual(projection('Dist.dist', null), { tex: 'd(x, y)', words: 'distance' });
+  assert.deepEqual(projection('CategoryTheory.Functor.obj', null), { words: '`obj` of a `Functor`' });
+  assert.deepEqual(projection('Units.val', null), { words: '`val` of a `Units`' });
+  assert.equal(projection('pi', null), null); // no owner to speak of
+});
+
+test('image and preimage of a set: f(S) and f⁻¹(S)', () => {
+  assert.equal(expr("0 ∈ cos '' Icc (1 : ℝ) 2"), '0 \\in \\cos\\left(\\left[1 : \\mathbb{R}, 2\\right]\\right)');
+  assert.equal(expr("f '' s ⊆ t"), 'f\\left(s\\right) \\subseteq t');
+  assert.equal(expr("f '' (s ∪ t) = f '' s ∪ f '' t"), 'f\\left(s \\cup t\\right) = f\\left(s\\right) \\cup f\\left(t\\right)');
+  assert.equal(expr("(fun x => x + 1) '' s"), '\\left(x \\mapsto x + 1\\right)\\left(s\\right)');
+  assert.equal(expr("g ∘ f '' s"), 'g \\circ f\\left(s\\right)');
+  assert.equal(expr("f ⁻¹' (t ∩ u)"), 'f^{-1}\\left(t \\cap u\\right)');
+  assert.equal(expr("x'' + y'"), "x'' + y'"); // primes on a name are not the image sign
+  const r = toLatex("theorem exists_cos_eq_zero : 0 ∈ cos '' Icc (1 : ℝ) 2", 'Real.exists_cos_eq_zero');
+  assert.equal(r.thesis, '0 \\in \\cos\\left(\\left[1 : \\mathbb{R}, 2\\right]\\right)');
+});
+
+test('towers of powers and repeated superscripts stay valid', () => {
+  assert.equal(expr('x ^ p ^ n = 0'), 'x^{p^{n}} = 0'); // Lean reads x ^ (p ^ n)
+  assert.equal(expr('a ^ b ^ c ^ d'), 'a^{b^{c^{d}}}');
+  assert.equal(expr('(c - 1)⁻¹ ^ 3'), '\\left(\\left(c - 1\\right)^{-1}\\right)^{3}');
+  assert.equal(expr('x² ^ n'), '\\left(x^{2}\\right)^{n}');
+  assert.equal(expr('x ^ 2 * y ^ 2'), 'x^{2} \\cdot y^{2}');
+});
+
+test('indexed infimum and supremum use signs the typesetter knows', () => {
+  assert.equal(expr('⨅ i, f i'), '\\mathop{\\sqcap}_{i} f\\,i');
+  assert.equal(expr('⨆ i, f i'), '\\bigsqcup_{i} f\\,i');
+});
+
+test('predicates are worded: a property of a function', () => {
+  assert.equal(expr('ContinuousOn f s'), 'f \\text{ is continuous on } s');
+  assert.equal(expr('StrictConcaveOn ℝ s f'), 'f \\text{ is strictly concave on } s');
+  assert.equal(expr('Continuous f ∧ Function.Injective g'), 'f \\text{ is continuous} \\land g \\text{ is injective}');
+  assert.equal(expr('DifferentiableAt ℝ f x'), 'f \\text{ is differentiable at } x');
+  assert.equal(expr("HasDerivAt f f' x"), "f \\text{ has derivative } f' \\text{ at } x");
+  assert.equal(expr('StrictMono f → Monotone f'), 'f \\text{ is strictly increasing} \\to f \\text{ is monotone}');
+  assert.equal(expr('Continuous (fun x => f x + g x)'), '\\left(x \\mapsto f\\,x + g\\,x\\right) \\text{ is continuous}');
+  assert.equal(expr('ContDiff ℝ n f'), 'f \\text{ is of class } C^{n}');
+  assert.equal(expr('Set.MapsTo f s t'), 'f \\text{ maps } s \\text{ into } t');
+});
+
+test('predicates are worded: sets, numbers, pairs', () => {
+  assert.equal(expr('IsCompact s → IsClosed s'), 's \\text{ is compact} \\to s \\text{ is closed}');
+  assert.equal(expr('Irrational (√2)'), '\\sqrt{2} \\text{ is irrational}');
+  assert.equal(expr('Nat.Prime p ∧ Odd p'), 'p \\text{ is prime} \\land p \\text{ is odd}');
+  assert.equal(expr('Disjoint s t'), 's \\text{ and } t \\text{ are disjoint}');
+  assert.equal(expr('IsCoprime a b'), 'a \\text{ and } b \\text{ are coprime}');
+  assert.equal(expr('IsLeast s a'), 'a \\text{ is the least element of } s');
+  assert.equal(expr('Convex ℝ s'), 's \\text{ is convex}');
+  assert.equal(expr('Integrable f μ'), 'f \\text{ is integrable}');
+  assert.equal(expr('Integrable f'), 'f \\text{ is integrable}');
+  assert.equal(expr('IsIntegral R x'), 'x \\text{ is integral over } R');
+});
+
+test('predicates written with a dot after their subject', () => {
+  assert.equal(expr('s.Nonempty'), 's \\text{ is nonempty}');
+  assert.equal(expr('p.Prime → 2 ≤ p'), 'p \\text{ is prime} \\to 2 \\le p');
+  assert.equal(expr('f.Injective'), 'f \\text{ is injective}');
+  assert.equal(expr('s.Finite ∧ t.Infinite'), 's \\text{ is finite} \\land t \\text{ is infinite}');
+  assert.equal(expr('Foo.bar.Nonempty'), '\\mathrm{Foo.bar.Nonempty}'); // not a variable
+});
+
+test('limits: Tendsto is written as a limit', () => {
+  assert.equal(expr('Tendsto f atTop (𝓝 a)'), 'f \\to a \\text{ at } +\\infty');
+  assert.equal(expr('Tendsto f (𝓝 x) (𝓝 (f x))'), 'f \\to f\\,x \\text{ at } x');
+  assert.equal(expr('Tendsto f atBot atTop'), 'f \\to +\\infty \\text{ at } -\\infty');
+  assert.equal(expr('Tendsto f l m'), 'f \\text{ tends to } m \\text{ along } l');
+});
+
+test('predicates: left alone when not applied as expected', () => {
+  assert.equal(expr('Continuous'), '\\mathrm{Continuous}');
+  assert.equal(expr('ContinuousOn f'), '\\mathrm{ContinuousOn}\\,f'); // an argument is missing
+  assert.equal(expr('Foo.Continuous f'), '\\mathrm{Foo.Continuous}\\,f'); // some other Continuous
+  assert.equal(expr('MyPredicate f s'), '\\mathrm{MyPredicate}\\,f\\,s');
+});
+
+test('predicates in a whole statement', () => {
+  assert.equal(prose('theorem t (f : ℝ → ℝ) (hf : Continuous f) (s : Set ℝ) (hs : IsCompact s) : BddAbove (f \'\' s)'),
+    'Let $f : \\mathbb{R} \\to \\mathbb{R}$, $s \\subseteq \\mathbb{R}$. Assume $f \\text{ is continuous}$ and $s \\text{ is compact}$. Then');
+  assert.equal(toLatex("theorem t (f : ℝ → ℝ) (s : Set ℝ) : BddAbove (f '' s)", 't').thesis, 'f\\left(s\\right) \\text{ is bounded above}');
+});
+
+test('an interval may have a symbol such as π or ∞ as a bound', () => {
+  assert.equal(expr('Icc 0 π'), '\\left[0, \\pi\\right]');
+  assert.equal(expr('Set.InjOn cos (Icc 0 π)'), '\\cos \\text{ is injective on } \\left[0, \\pi\\right]');
+  assert.equal(expr('Set.Ioo (-π) π'), '\\left(- \\pi, \\pi\\right)');
 });

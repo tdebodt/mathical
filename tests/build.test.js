@@ -26,15 +26,15 @@ test('parseLine handles quoted commas and escaped quotes', () => {
 test('rows yields header-keyed objects', async () => {
   const out = [];
   for await (const r of rows(path.join(fixtures, 'edges.csv'))) out.push(r);
-  assert.equal(out.length, 43);
+  assert.equal(out.length, 46);
   assert.deepEqual({ ...out[0] }, { source: 'Thm', target: 'A', is_explicit: 'True', is_simplifier: 'False' });
 });
 
 test('loads nodes and edges', () => {
-  assert.equal(res.nodes, 44); // 43 in metrics + Ghost
-  assert.equal(res.edges, 42); // 43 rows minus the C→C self-loop
-  assert.equal(db.prepare('SELECT COUNT(*) c FROM nodes').get().c, 44);
-  assert.equal(db.prepare('SELECT COUNT(*) c FROM edges').get().c, 42);
+  assert.equal(res.nodes, 50); // 49 in metrics + Ghost
+  assert.equal(res.edges, 45); // 46 rows minus the C→C self-loop
+  assert.equal(db.prepare('SELECT COUNT(*) c FROM nodes').get().c, 50);
+  assert.equal(db.prepare('SELECT COUNT(*) c FROM edges').get().c, 45);
   assert.equal(edge('C', 'C'), undefined);
 });
 
@@ -62,9 +62,9 @@ test('rebuilding replaces an existing database', async () => {
     metricsCsv: path.join(fixtures, 'metrics.csv'),
     dbPath,
   });
-  assert.equal(again.edges, 42);
+  assert.equal(again.edges, 45);
   assert.equal(fs.existsSync(dbPath + '.tmp'), false);
-  assert.equal(open(dbPath).prepare('SELECT COUNT(*) c FROM nodes').get().c, 44);
+  assert.equal(open(dbPath).prepare('SELECT COUNT(*) c FROM nodes').get().c, 50);
 });
 
 test('with a source checkout, the build stores each declaration\'s statement, context and docstring', async () => {
@@ -88,10 +88,22 @@ test('with a source checkout, the build stores each declaration\'s statement, co
   assert.equal(row('Core').statement, 'theorem Core (n : ℕ) : n = n'); // found through the deprecation shim
   assert.deepEqual(row('B'), { statement: null, context: null, doc: null }); // not written in its file
   assert.deepEqual(row('Eq.mpr'), { statement: null, context: null, doc: null }); // no source file at all
-  assert.equal(built.statements, 5); // Thm, A, Hub, axb, Core
+  assert.equal(built.statements, 6); // Thm, A, Hub, axb, Core, Short
+  // an abbreviation's body is its meaning and is kept; a definition's or a theorem's is not
+  const body = (name) => withSource.prepare('SELECT body FROM nodes WHERE name = ?').get(name).body;
+  assert.equal(body('Short'), ':= Hub x');
+  assert.equal(body('Hub'), null);
+  assert.equal(body('Thm'), null);
 });
 
 test('without a source checkout the statement columns stay empty', () => {
   assert.equal(db.prepare('SELECT COUNT(*) c FROM nodes WHERE statement IS NOT NULL').get().c, 0);
   assert.equal(res.statements, 0);
+});
+
+test('the build records which structure an inheritance projection leads to', () => {
+  const parent = (name) => db.prepare('SELECT parent FROM nodes WHERE name = ?').get(name).parent;
+  assert.equal(parent('Ring.toSemiring'), 'Semiring'); // every Ring is a Semiring
+  assert.equal(parent('Ring.toFun'), null); // a field named toFun: there is no structure called Fun
+  assert.equal(parent('Thm'), null);
 });

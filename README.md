@@ -25,9 +25,15 @@ about SQLite; add `--disable-warning=ExperimentalWarning` to hide it.
 - Search by name (`/` focuses the search box), or open a link such as
   `http://127.0.0.1:5173/#n=Real.sqrt_nonneg`.
 - Each node is a box with the declaration's name on its top edge and, inside, the
-  conclusion of its statement typeset as a formula. A definition shows the opening
-  of its docstring instead; a declaration with neither shows its name only. Hover a
-  node for the full statement, hypotheses included. **nodes as** switches to
+  conclusion of its statement typeset as a formula. A definition shows its signature,
+  what it takes and what it gives ("arg : ℂ → ℝ"), not how it is computed; without
+  a stated type it shows the opening of its docstring; a declaration with neither shows its name only.
+  An abbreviation shows what it stands for ("Name := expression"). Declarations
+  Lean generates are worded from their name: a notation's operation shows its sign
+  (`Norm.norm` as ‖x‖), `Semiring.toNonAssocSemiring` reads "every semiring is a
+  non-associative semiring", and a structure's field reads "`obj` of a `Functor`". Hover a
+  node, or a dependency's name in the proof, for a card with its docstring and
+  full statement, hypotheses included. **nodes as** switches to
   compact name-only boxes.
 - Dependencies are on the left, dependents on the right. Arrows point from a
   declaration to what it depends on. Click a node to focus on it; the browser's
@@ -48,7 +54,8 @@ about SQLite; add `--disable-warning=ExperimentalWarning` to hide it.
 - **hide Lean plumbing** (on by default) leaves out the logic and notation machinery
   of Lean's core library, such as `Eq.mpr`, `propext`, `HAdd.hAdd` and `OfNat.ofNat`,
   which nearly every proof touches. Core declarations about data (`Nat`, `Int`,
-  `List` …) and everything from Mathlib stay. The column header says how many
+  `List` …) stay. It also leaves out Mathlib's inheritance projections (`X.toY`
+  where the structure X extends Y). Everything else from Mathlib stays. The column header says how many
   neighbours the filters hid.
 - **theorems only** keeps just the theorems and lemmas around the focus and hides
   definitions, structures, instances and the rest. The focus itself is always shown.
@@ -77,6 +84,15 @@ about SQLite; add `--disable-warning=ExperimentalWarning` to hide it.
   French / Belgian conventions: the angle ABC under a hat instead of ∠ABC, open
   intervals as ]a, b[ instead of (a, b), and slanted ≤ ≥. The wording stays in
   English. The choice is remembered in the browser.
+- Standard constants and functions are written with their usual sign instead of
+  their Lean name: π, i, exp, log, sin, cos, arcsin, √, |x|, n!, binomials, gcd,
+  max, Re and Im. This applies only where the name has its standard meaning
+  (`Real.pi`, `Complex.exp`, `Nat.gcd`); `Finset.pi` keeps its Lean name. The table
+  is at the top of `ident` in `public/lean-latex.js`.
+- Predicates are put into words: `ContinuousOn f s` reads "f is continuous on s",
+  `StrictConcaveOn ℝ s f` "f is strictly concave on s", `s.Nonempty` "s is nonempty",
+  and `Tendsto f atTop (𝓝 a)` "f → a at +∞". About 110 are covered, in `PREDICATES`
+  in `public/lean-phrases.js`; a predicate not listed there keeps its Lean name.
 - Drag or scroll to move; pinch or ⌘/Ctrl-scroll to zoom.
 
 ## A rule for the typeset statement

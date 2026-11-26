@@ -42,3 +42,6 @@ Thm,Ghost,True,False
 Core,Eq.mpr,True,False
 Core,Nat.succ,True,False
 Core,axb,True,False
+UsesRing,Ring.toSemiring,True,False
+UsesRing,Ring.toFun,True,False
+UsesRing,Short,True,False

@@ -103,6 +103,8 @@
   .nbody { font-size: 14.5px; line-height: 1.6; overflow-x: auto; overflow-y: hidden; }
   .nbody.words { max-width: 340px; font: 12.5px/1.45 var(--sans); color: var(--muted); white-space: normal; overflow-wrap: anywhere; }
   .nbody.words code { font: 11.5px var(--mono); }
+  .nbody .gloss { margin-left: 10px; font: 12px var(--sans); color: var(--muted); }
+  .node.pick .gloss { color: #fff; }
   .node .usage { position: absolute; left: 10px; bottom: 3px; height: 2.5px; min-width: 2px; border-radius: 2px; background: var(--accent); opacity: .6; }
   /* Without a formula (or in the names view) the name goes inside, as a plain pill. */
   .node.compact { padding: 5px 11px 9px; }
@@ -130,6 +132,9 @@
   #tip { position: absolute; z-index: 5; max-width: min(560px, 80%); padding: 10px 14px; pointer-events: none;
          background: var(--surface); border: 1px solid var(--line); border-radius: 9px; box-shadow: 0 8px 28px rgb(0 0 0 / .18); }
   #tip[hidden] { display: none; }
+  #tip .tipname { font: 650 12px var(--mono); margin-bottom: 4px; overflow-wrap: anywhere; }
+  #tip .doc { margin: 0 0 6px; font-size: 13px; color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; }
+  #tip .doc strong { color: var(--text); } #tip .doc code { font: 12px var(--mono); }
   #proof .hint { color: var(--muted); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
   #arrow path { fill: var(--edge); } #arrow-hl path { fill: var(--accent); }
   .colhead { font: 600 12px var(--sans); fill: var(--text); text-anchor: middle; }
@@ -412,17 +417,30 @@ function nodeStyle() {
 }
 
 // What a node says under its name: the conclusion of its statement, typeset; for a definition,
-// the opening of its docstring; nothing when the source has neither (or in the names-only view).
+// its signature; failing that, the opening of its docstring; nothing when the source has
+// none of these (or in the names-only view).
 function nodeBody(n) {
   if (nodeStyle() === 'names') return null;
   if (n.statement && window.LeanLatex && window.katex) {
-    const tex = LeanLatex.toLatex(n.statement, n.name, n.context, { notation: notation() });
+    const tex = LeanLatex.toLatex(n.statement, n.name, n.context, { notation: notation(), body: n.body });
     if (tex && tex.thesis) {
       try {
         const body = h('div', { className: 'nbody' });
         katex.render(tex.thesis, body, { displayMode: false, throwOnError: true, strict: false });
         return body;
       } catch { /* a formula KaTeX rejects: fall through to the docstring */ }
+    }
+  }
+  // Declarations Lean generates have no statement: say what their name tells.
+  if (!n.statement && window.LeanPhrases) {
+    const said = LeanPhrases.projection(n.name, n.parent);
+    if (said) {
+      const body = h('div', { className: 'nbody' + (said.tex ? '' : ' words') });
+      if (said.tex && window.katex) {
+        try { katex.render(said.tex, body, { displayMode: false, throwOnError: true, strict: false }); } catch { body.textContent = ''; }
+        body.append(h('span', { className: 'gloss', textContent: said.words }));
+      } else body.append(docText(said.words));
+      return body;
     }
   }
   if (n.doc) {
@@ -436,18 +454,26 @@ function nodeBody(n) {
 // The full statement of the node under the pointer, hypotheses included: a node shows only
 // the conclusion, which can mislead on its own.
 let tipFor = null;
-function showTip(n, box) {
-  const full = n.statement ? renderMath(n.statement, n.name, n.context) : null;
-  if (!full || nodeStyle() === 'names' && !full) return hideTip();
-  tipFor = box;
+// The card for a declaration: its docstring, then its full statement. `anchor` is what the
+// pointer is on: the node itself, or the declaration's name in the proof or statement text.
+function showTip(n, anchor) {
+  const full = n.statement ? renderMath(n.statement, n.name, n.context, n.body) : null;
+  if (!full && !n.doc) return hideTip();
+  tipFor = anchor;
   const tip = $('tip');
-  tip.replaceChildren(full[0]);
+  const doc = n.doc ? n.doc.trim() : '';
+  tip.replaceChildren(
+    h('div', { className: 'tipname', textContent: n.name }),
+    ...(doc ? [h('p', { className: 'doc' }, docText(doc.length > 700 ? doc.slice(0, doc.lastIndexOf(' ', 700)) + ' …' : doc))] : []),
+    ...(full ? [full[0]] : [])
+  );
   tip.hidden = false;
-  const area = stage.getBoundingClientRect(), r = box.getBoundingClientRect(), t = tip.getBoundingClientRect();
+  const area = stage.getBoundingClientRect(), r = anchor.getBoundingClientRect(), t = tip.getBoundingClientRect();
   const left = Math.max(8, Math.min(area.width - t.width - 8, r.left - area.left));
   const below = r.bottom - area.top + 8, above = r.top - area.top - t.height - 8;
+  const top = below + t.height <= area.height - 8 || above < 8 ? below : above;
   tip.style.left = left + 'px';
-  tip.style.top = (below + t.height <= area.height - 8 || above < 8 ? below : above) + 'px';
+  tip.style.top = Math.max(8, Math.min(area.height - t.height - 8, top)) + 'px';
 }
 function hideTip() {
   tipFor = null;
@@ -507,6 +533,7 @@ function draw(data, state) {
     box.addEventListener('pointerleave', on(false));
     box.addEventListener('focus', on(true));
     box.addEventListener('blur', on(false));
+    box.declaration = n;
     if (!nodeByName.has(n.name)) nodeByName.set(n.name, box);
     boxes.append(box);
     return box;
@@ -655,10 +682,17 @@ function renderLean(code, deps, focusName) {
       if (!seg.target) { frag.append(seg.text); continue; }
       const a = h('a', { className: 'dep', href: '#n=' + encodeURIComponent(seg.target), title: seg.target, textContent: seg.text });
       a.addEventListener('click', (e) => { e.preventDefault(); go({ n: seg.target }); });
-      a.addEventListener('pointerenter', () => spotlight(seg.target, true));
-      a.addEventListener('pointerleave', () => spotlight(seg.target, false));
-      a.addEventListener('focus', () => spotlight(seg.target, true));
-      a.addEventListener('blur', () => spotlight(seg.target, false));
+      // Hovering a dependency's name picks out its node and shows its card, as hovering the node does.
+      const enter = () => {
+        spotlight(seg.target, true);
+        const node = nodeByName.get(seg.target);
+        if (node && node.declaration) showTip(node.declaration, a);
+      };
+      const leave = () => { spotlight(seg.target, false); if (tipFor === a) hideTip(); };
+      a.addEventListener('pointerenter', enter);
+      a.addEventListener('pointerleave', leave);
+      a.addEventListener('focus', enter);
+      a.addEventListener('blur', leave);
       frag.append(a);
     }
   }
@@ -704,8 +738,8 @@ async function pinNamed(f, seq) {
 
 // The statement typeset as mathematics, as [text block, copy button], or null when it cannot be (a structure, a statement
 // the converter does not understand, KaTeX not loaded, or LaTeX that KaTeX rejects).
-function renderMath(statement, name, context) {
-  const tex = window.LeanLatex && window.katex ? LeanLatex.toLatex(statement, name, context, { notation: notation() }) : null;
+function renderMath(statement, name, context, body) {
+  const tex = window.LeanLatex && window.katex ? LeanLatex.toLatex(statement, name, context, { notation: notation(), body }) : null;
   if (!tex) return null;
   const box = h('div', { className: 'tex' }, h('span', { className: 'kind', textContent: tex.kind + '. ' }));
   try {
@@ -752,7 +786,7 @@ let band = null; // { r: the source lookup, f: the focused node } for the declar
 function drawBand() {
   if (!band) return showTheorem(null);
   const { r, f } = band;
-  const math = renderMath(r.statement, f.name, r.context);
+  const math = renderMath(r.statement, f.name, r.context, /(^|\s)abbrev\s/.test(r.statement) ? r.body : undefined);
   const doc = r.doc ? h('p', { className: 'doc' }, docText(r.doc)) : null;
   showTheorem(doc || math ? [h('div', { className: 'main' }, ...[doc, math && math[0]].filter(Boolean)), ...(math ? [math[1]] : [])] : null);
 }

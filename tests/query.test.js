@@ -145,3 +145,12 @@ test('theoremsOnly keeps only theorems among the neighbours', () => {
   assert.deepEqual(both.out.hidden, [1]);
   assert.deepEqual(names(neighborhood(db, 'Thm', { theoremsOnly: true, pin: ['Ghost'] }).out), ['A', 'B']);
 });
+
+test('hidePlumbing also leaves out inheritance projections such as Ring.toSemiring', () => {
+  assert.deepEqual(names(neighborhood(db, 'UsesRing').out), ['Ring.toSemiring', 'Ring.toFun', 'Short']);
+  const tidy = neighborhood(db, 'UsesRing', { hidePlumbing: true });
+  assert.deepEqual(names(tidy.out), ['Ring.toFun', 'Short']);
+  assert.deepEqual(tidy.out.hidden, [1]);
+  assert.equal(tidy.out.nodes[0].parent, null);
+  assert.equal(neighborhood(db, 'UsesRing').out.nodes[0].parent, 'Semiring');
+});

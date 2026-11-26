@@ -13,3 +13,6 @@ lemma A : (1 : α) ≠ 0 := one_ne_zero
 def Hub (x : α) : α := x * x
 
 theorem axb : True := trivial
+
+/-- A short name. -/
+abbrev Short (x : α) : α := Hub x

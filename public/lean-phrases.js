@@ -94,7 +94,7 @@
   };
 
   const SIMPLE = /^[\p{L}_][\p{L}\p{Nd}_'₀-₉]*$/u;
-  const VOWEL_SOUND = /^(?![Uu]ni|[Ee]u|one\b|σ|T[₀-₄])[aeiouAEIOU]/;
+  const VOWEL_SOUND = /^(?![Uu]ni|[Ee]u|[Oo]ne\b|σ|T[₀-₄])[aeiouAEIOU]/;
   const article = (phrase) => (VOWEL_SOUND.test(phrase) ? 'an ' : 'a ');
 
   // What an instance `[cls args…]` is: bookkeeping to drop, a hypothesis, a statement
@@ -201,5 +201,111 @@
     }, []);
   }
 
-  return { classify, describe };
+  // The operation behind a notation: what its node shows instead of a bare name.
+  const NOTATION = {
+    'Norm.norm': ['\\| x \\|', 'norm'], 'NNNorm.nnnorm': ['\\| x \\|_{+}', 'norm, as a non-negative real'],
+    'ENorm.enorm': ['\\| x \\|_{e}', 'extended norm'],
+    'Dist.dist': ['d(x, y)', 'distance'], 'NNDist.nndist': ['d(x, y)', 'distance, as a non-negative real'],
+    'EDist.edist': ['d(x, y)', 'extended distance'],
+    'Inner.inner': ['\\langle x, y \\rangle', 'inner product'],
+    'VSub.vsub': ['p - q', 'the vector from q to p'], 'VAdd.vadd': ['v + p', 'a vector added to a point'],
+    'HAdd.hAdd': ['a + b', 'addition'], 'Add.add': ['a + b', 'addition'], 'HSub.hSub': ['a - b', 'subtraction'], 'Sub.sub': ['a - b', 'subtraction'],
+    'HMul.hMul': ['a \\cdot b', 'multiplication'], 'Mul.mul': ['a \\cdot b', 'multiplication'],
+    'HDiv.hDiv': ['a / b', 'division'], 'Div.div': ['a / b', 'division'], 'HPow.hPow': ['a^{b}', 'power'], 'Pow.pow': ['a^{b}', 'power'],
+    'HSMul.hSMul': ['c \\bullet x', 'scalar multiplication'], 'SMul.smul': ['c \\bullet x', 'scalar multiplication'],
+    'Neg.neg': ['-a', 'negation'], 'Inv.inv': ['a^{-1}', 'inverse'], 'Zero.zero': ['0', 'zero'], 'One.one': ['1', 'one'],
+    'LE.le': ['a \\le b', 'order'], 'LT.lt': ['a < b', 'strict order'], 'Membership.mem': ['a \\in s', 'membership'],
+    'HasSubset.Subset': ['s \\subseteq t', 'inclusion'], 'Union.union': ['s \\cup t', 'union'], 'Inter.inter': ['s \\cap t', 'intersection'],
+    'SDiff.sdiff': ['s \\setminus t', 'difference'], 'Compl.compl': ['s^{c}', 'complement'],
+    'Max.max': ['a \\sqcup b', 'supremum of two'], 'Min.min': ['a \\sqcap b', 'infimum of two'],
+    'Top.top': ['\\top', 'greatest element'], 'Bot.bot': ['\\bot', 'least element'],
+    'Dvd.dvd': ['a \\mid b', 'divisibility'], 'Star.star': ['x^{\\star}', 'star'],
+    'DFunLike.coe': ['f(x)', 'applying a function-like object'], 'SetLike.coe': ['S', 'a structure seen as a set'],
+    'SProd.sprod': ['s \\times t', 'product of sets'], 'HasQuotient.Quotient': ['A / B', 'quotient'],
+    'Quiver.Hom': ['X \\longrightarrow Y', 'morphisms from X to Y'],
+    'CategoryTheory.CategoryStruct.comp': ['f \\gg g', 'composition, f then g'], 'CategoryTheory.CategoryStruct.id': ['\\mathbb{1}_{X}', 'identity morphism'],
+  };
+
+  const nounOf = (cls) => (Object.hasOwn(PHRASES, cls) && PHRASES[cls].c === 'n' && !PHRASES[cls].t.includes('{') ? PHRASES[cls].t : null);
+  const last = (name) => name.slice(name.lastIndexOf('.') + 1);
+
+  // What to say about a declaration Lean generated and the source never states: a notation's
+  // operation ({ tex, words }), a structure passing to one it extends ("every ring is a
+  // semiring"; `parent` names that structure), or a field of a structure. `words` may mark
+  // Lean names with backticks. Null when the name gives nothing to go on.
+  function projection(name, parent) {
+    if (Object.hasOwn(NOTATION, name)) return { tex: NOTATION[name][0], words: NOTATION[name][1] };
+    const dot = name.lastIndexOf('.');
+    if (dot < 0) return null;
+    const owner = last(name.slice(0, dot));
+    if (parent) {
+      const from = nounOf(owner), to = nounOf(last(parent));
+      return { words: from && to ? `every ${from} is ${article(to)}${to}` : `every \`${owner}\` is ${article(last(parent))}\`${last(parent)}\`` };
+    }
+    return { words: `\`${last(name)}\` of ${article(owner)}\`${owner}\`` };
+  }
+
+  // Predicates: how a property is said. `{k}` is the k-th argument, shown as a formula;
+  // ⟦…⟧ is a piece of formula written out; the rest is prose. Each entry gives the wording,
+  // how many arguments the predicate takes, and how many optional ones may follow (a measure,
+  // usually). `dot: true` marks those also written after their subject: `s.Nonempty`.
+  const P = (text, arity, extra = 0, dot = false) => ({ text, arity, extra, dot });
+  const PREDICATES = {
+    // functions
+    Continuous: P('{0} is continuous', 1), ContinuousOn: P('{0} is continuous on {1}', 2), ContinuousAt: P('{0} is continuous at {1}', 2),
+    ContinuousWithinAt: P('{0} is continuous at {2} within {1}', 3), UniformContinuous: P('{0} is uniformly continuous', 1),
+    UniformContinuousOn: P('{0} is uniformly continuous on {1}', 2), LipschitzWith: P('{1} is Lipschitz with constant {0}', 2),
+    Differentiable: P('{1} is differentiable', 2), DifferentiableOn: P('{1} is differentiable on {2}', 3),
+    DifferentiableAt: P('{1} is differentiable at {2}', 3), DifferentiableWithinAt: P('{1} is differentiable at {3} within {2}', 4),
+    HasDerivAt: P('{0} has derivative {1} at {2}', 3), HasDerivWithinAt: P('{0} has derivative {1} at {3} within {2}', 4),
+    HasStrictDerivAt: P('{0} has strict derivative {1} at {2}', 3),
+    HasFDerivAt: P('{0} has Fréchet derivative {1} at {2}', 3), HasFDerivWithinAt: P('{0} has Fréchet derivative {1} at {3} within {2}', 4),
+    HasStrictFDerivAt: P('{0} has strict Fréchet derivative {1} at {2}', 3),
+    ContDiff: P('{2} is of class ⟦C^{{1}}⟧', 3), ContDiffOn: P('{2} is of class ⟦C^{{1}}⟧ on {3}', 4),
+    ContDiffAt: P('{2} is of class ⟦C^{{1}}⟧ at {3}', 4), ContDiffWithinAt: P('{2} is of class ⟦C^{{1}}⟧ at {4} within {3}', 5),
+    AnalyticAt: P('{1} is analytic at {2}', 3), AnalyticOn: P('{1} is analytic on {2}', 3),
+    Injective: P('{0} is injective', 1, 0, true), Surjective: P('{0} is surjective', 1, 0, true), Bijective: P('{0} is bijective', 1, 0, true),
+    InjOn: P('{0} is injective on {1}', 2), SurjOn: P('{0} maps {1} onto {2}', 3), BijOn: P('{0} is a bijection from {1} to {2}', 3),
+    MapsTo: P('{0} maps {1} into {2}', 3), EqOn: P('⟦{0} = {1}⟧ on {2}', 3), Involutive: P('{0} is an involution', 1),
+    LeftInverse: P('{0} is a left inverse of {1}', 2), RightInverse: P('{0} is a right inverse of {1}', 2), Periodic: P('{0} is periodic with period {1}', 2),
+    Monotone: P('{0} is monotone', 1), Antitone: P('{0} is antitone', 1), StrictMono: P('{0} is strictly increasing', 1), StrictAnti: P('{0} is strictly decreasing', 1),
+    MonotoneOn: P('{0} is monotone on {1}', 2), AntitoneOn: P('{0} is antitone on {1}', 2),
+    StrictMonoOn: P('{0} is strictly increasing on {1}', 2), StrictAntiOn: P('{0} is strictly decreasing on {1}', 2),
+    ConvexOn: P('{2} is convex on {1}', 3), ConcaveOn: P('{2} is concave on {1}', 3),
+    StrictConvexOn: P('{2} is strictly convex on {1}', 3), StrictConcaveOn: P('{2} is strictly concave on {1}', 3),
+    // measure and summation
+    Measurable: P('{0} is measurable', 1), AEMeasurable: P('{0} is a.e. measurable', 1, 1), StronglyMeasurable: P('{0} is strongly measurable', 1),
+    AEStronglyMeasurable: P('{0} is a.e. strongly measurable', 1, 1), Integrable: P('{0} is integrable', 1, 1), IntegrableOn: P('{0} is integrable on {1}', 2, 1),
+    IntervalIntegrable: P('{0} is integrable on ⟦[{2}, {3}]⟧', 4), MemLp: P('{0} is in ⟦L^{{1}}⟧', 2, 1),
+    MeasurableSet: P('{0} is measurable', 1), NullMeasurableSet: P('{0} is null-measurable', 1, 1),
+    Summable: P('{0} is summable', 1), Multipliable: P('{0} is multipliable', 1), HasSum: P('{0} has sum {1}', 2), HasProd: P('{0} has product {1}', 2),
+    // sets
+    IsOpen: P('{0} is open', 1), IsClosed: P('{0} is closed', 1), IsCompact: P('{0} is compact', 1), IsConnected: P('{0} is connected', 1),
+    IsPreconnected: P('{0} is preconnected', 1), Dense: P('{0} is dense', 1), IsBounded: P('{0} is bounded', 1), IsClopen: P('{0} is clopen', 1),
+    Convex: P('{1} is convex', 2), BddAbove: P('{0} is bounded above', 1), BddBelow: P('{0} is bounded below', 1),
+    Nonempty: P('{0} is nonempty', 1, 0, true), Finite: P('{0} is finite', 1, 0, true), Infinite: P('{0} is infinite', 1, 0, true),
+    Countable: P('{0} is countable', 1, 0, true), Subsingleton: P('{0} has at most one element', 1, 0, true),
+    IsLeast: P('{1} is the least element of {0}', 2), IsGreatest: P('{1} is the greatest element of {0}', 2),
+    IsLUB: P('{1} is the least upper bound of {0}', 2), IsGLB: P('{1} is the greatest lower bound of {0}', 2),
+    Disjoint: P('{0} and {1} are disjoint', 2), LinearIndependent: P('{1} is linearly independent over {0}', 2),
+    // elements
+    Prime: P('{0} is prime', 1, 0, true), Irreducible: P('{0} is irreducible', 1), IsUnit: P('{0} is a unit', 1), IsNilpotent: P('{0} is nilpotent', 1),
+    Even: P('{0} is even', 1), Odd: P('{0} is odd', 1), IsSquare: P('{0} is a square', 1), Squarefree: P('{0} is squarefree', 1),
+    Irrational: P('{0} is irrational', 1), IsIntegral: P('{1} is integral over {0}', 2), IsAlgebraic: P('{1} is algebraic over {0}', 2),
+    Transcendental: P('{1} is transcendental over {0}', 2), IsCoprime: P('{0} and {1} are coprime', 2), Coprime: P('{0} and {1} are coprime', 2, 0, true),
+    Commute: P('{0} and {1} commute', 2), IsMin: P('{0} is minimal', 1), IsMax: P('{0} is maximal', 1),
+    IsBot: P('{0} is the least element', 1), IsTop: P('{0} is the greatest element', 1),
+  };
+  // Namespaces in which these names keep their usual meaning (`Function.Injective`, `Set.Finite`).
+  const PREDICATE_NS = new Set(['Function', 'Set', 'Nat', 'Int', 'MeasureTheory', 'Bornology', 'Filter']);
+
+  // The wording of a predicate, or null. `dotted` asks for one that may follow its subject.
+  function predicate(name, dotted) {
+    const dot = name.lastIndexOf('.');
+    if (dot >= 0 && !PREDICATE_NS.has(name.slice(0, dot))) return null;
+    const entry = PREDICATES[name.slice(dot + 1)];
+    return Object.hasOwn(PREDICATES, name.slice(dot + 1)) && (!dotted || entry.dot) ? entry : null;
+  }
+
+  return { classify, describe, projection, predicate };
 });
