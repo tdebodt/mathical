@@ -187,3 +187,33 @@ test('context: the `variable` declarations in scope at the declaration', () => {
   assert.equal(findDeclaration(SRC, 'irrational_sqrt_two').context, '');
   assert.equal(findDeclaration(SRC, 'Irrational.add_ratCast').context, '{x : ℝ}');
 });
+
+test('indexSource scans a file once and finds each declaration in it', () => {
+  const { indexSource } = require('../lib/leansource');
+  const index = indexSource(SRC);
+  assert.equal(index.find('irrational_sqrt_two').line, 17);
+  assert.equal(index.find('Irrational.add_ratCast').context, '{x : ℝ}');
+  assert.match(index.find('Irrational.ne_nat').statement, /x ≠ m$/);
+  assert.match(index.find('ne_nat').statement, /False$/);
+  assert.equal(index.find('Irrational.foo_bar'), null);
+  assert.equal(index.find('_private.Mathlib.X.0.hidden_thing').statement, 'private theorem hidden_thing : True');
+  assert.equal(index.find('nope'), null);
+  assert.equal(indexSource('').find('x'), null);
+});
+
+test('locate reads the file a module names and follows a moved file through its shim', async () => {
+  const { locate, localSource } = require('../lib/leansource');
+  const read = localSource(require('node:path').join(__dirname, 'fixtures', 'src'));
+  const thm = await locate(read, 'Mathlib/Fix.lean', 'Thm');
+  assert.equal(thm.statement, 'theorem Thm (x : α) (h : x ≠ 0) : x / x = 1');
+  assert.equal(thm.doc, 'The main theorem.\nIt has a second line.');
+  assert.equal(thm.context, '{α : Type*} [Field α]');
+  assert.equal(thm.path, 'Mathlib/Fix.lean');
+  const moved = await locate(read, 'Mathlib/Old.lean', 'Core');
+  assert.equal(moved.statement, 'theorem Core (n : ℕ) : n = n');
+  assert.equal(moved.path, 'Mathlib/Moved/Home.lean');
+  assert.deepEqual(await locate(read, 'Mathlib/Fix.lean', 'Nope'), { missing: 'not_in_file' });
+  assert.deepEqual(await locate(read, 'Mathlib/Gone.lean', 'Thm'), { missing: 'file_missing' });
+  assert.equal(await read('../../helpers.js'), null); // nothing outside the source folder
+  assert.equal(await read('Mathlib/Fix.lean/../../../helpers.js'), null);
+});

@@ -74,8 +74,10 @@
   #proof pre { margin: 0; padding: 12px 16px; font: 12.5px/1.55 var(--mono); white-space: pre; overflow: auto; tab-size: 2; min-height: 0; }
   #proof.collapsed pre { display: none; }
   #stage { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
-  svg { width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; user-select: none; }
-  svg.dragging { cursor: grabbing; }
+  svg { width: 100%; height: 100%; display: block; }
+  #stage { cursor: grab; touch-action: none; user-select: none; }
+  #stage.dragging { cursor: grabbing; }
+  #boxes { position: absolute; left: 0; top: 0; width: 0; height: 0; transform-origin: 0 0; pointer-events: none; }
   .zoom { position: absolute; right: 12px; bottom: 12px; display: flex; gap: 4px; }
   .legend { position: absolute; left: 12px; bottom: 12px; display: flex; flex-wrap: wrap; gap: 4px 12px; max-width: 70%;
             padding: 6px 10px; font-size: 12px; color: var(--muted); background: var(--surface);
@@ -88,32 +90,46 @@
   #message h2 { color: var(--text); font-size: 18px; margin: 0 0 6px; }
   #message a { font-family: var(--mono); font-size: 13px; }
   a { color: var(--accent); }
-  .node { cursor: pointer; }
-  .node rect { fill: var(--pill); stroke: var(--pill-line); stroke-width: 1; }
-  .node text { font: 12px var(--mono); fill: var(--text); dominant-baseline: central; }
-  .node text.count { font-size: 10.5px; fill: var(--muted); text-anchor: end; }
-  .node text.count.zero { opacity: .55; }
-  .node rect.usage { fill: var(--accent) !important; stroke: none !important; opacity: .6; }
-  .node.focus text.count { font-weight: 400; }
-  .node.pick text.count { fill: #fff; } .node.pick rect.usage { fill: #fff !important; opacity: .9; }
-  .legend .bar { width: 22px; height: 3px; border-radius: 2px; background: var(--accent); opacity: .6; }
-  .node:hover rect, .node.hl rect, .node:focus-visible rect { stroke: var(--accent); stroke-width: 1.6; }
+  /* A node: its name sits on the top edge, like the caption of a framed box; the formula is inside. */
+  .node { --fill: var(--pill); position: absolute; box-sizing: border-box; width: max-content; min-width: 150px; max-width: 600px;
+          padding: 14px 13px 10px; background: var(--fill); border: 1px solid var(--pill-line); border-radius: 9px;
+          color: var(--text); cursor: pointer; pointer-events: auto; }
+  .ntitle { display: flex; align-items: center; gap: 6px; width: max-content; max-width: calc(100% + 10px); margin: -23px 0 5px -5px; padding: 0 6px;
+            font: 11px/18px var(--mono); color: var(--muted); white-space: nowrap; border-radius: 4px;
+            background: linear-gradient(var(--bg) 0 50%, var(--fill) 50% 100%); }
+  .ntitle .dot { width: 8px; height: 8px; }
+  .ntitle .count { margin-left: 4px; font-size: 10.5px; opacity: .85; }
+  .ntitle .count.zero { opacity: .5; }
+  .nbody { font-size: 14.5px; line-height: 1.6; overflow-x: auto; overflow-y: hidden; }
+  .nbody.words { max-width: 340px; font: 12.5px/1.45 var(--sans); color: var(--muted); white-space: normal; overflow-wrap: anywhere; }
+  .nbody.words code { font: 11.5px var(--mono); }
+  .node .usage { position: absolute; left: 10px; bottom: 3px; height: 2.5px; min-width: 2px; border-radius: 2px; background: var(--accent); opacity: .6; }
+  /* Without a formula (or in the names view) the name goes inside, as a plain pill. */
+  .node.compact { padding: 5px 11px 9px; }
+  .node.compact .ntitle { margin: 0; padding: 0; max-width: none; background: none; font-size: 12px; color: var(--text); }
+  .node:hover, .node.hl, .node:focus-visible { border-color: var(--accent); box-shadow: 0 0 0 .6px var(--accent); }
   .node:focus { outline: none; }
-  .node.focus { cursor: default; }
-  .node.focus rect { fill: var(--focus-bg); stroke: var(--accent); stroke-width: 2; }
-  .node.focus text { font-weight: 650; }
-  .node.stub rect { stroke-dasharray: 4 3; }
+  .node.focus { --fill: var(--focus-bg); border: 2px solid var(--accent); cursor: default; }
+  .node.focus .ntitle { color: var(--accent); font-weight: 650; }
+  .node.compact.focus .ntitle { color: var(--text); }
+  .node.stub { border-style: dashed; }
   .edge { fill: none; stroke: var(--edge); stroke-width: 1; opacity: .55; marker-end: url(#arrow); }
   .edge.syn { stroke-dasharray: 3 4; opacity: .35; }
-  svg.hovering .edge { opacity: .1; }
-  svg.hovering .edge.hl { stroke: var(--accent); opacity: 1; stroke-width: 1.5; marker-end: url(#arrow-hl); }
+  #stage.hovering .edge { opacity: .1; }
+  #stage.hovering .edge.hl { stroke: var(--accent); opacity: 1; stroke-width: 1.5; marker-end: url(#arrow-hl); }
   /* spotlight: one node picked out from the proof text */
-  svg.spot .node:not(.pick):not(.focus) { opacity: .28; }
-  svg.spot .edge { opacity: .07; }
-  svg.spot .edge.pick { stroke: var(--accent); opacity: 1; stroke-width: 2.4; stroke-dasharray: none; marker-end: url(#arrow-hl); }
-  .node.pick rect { fill: var(--accent); stroke: var(--accent); stroke-width: 2; }
-  .node.pick text { fill: #fff; font-weight: 650; }
-  .node.pick circle { stroke: #fff; stroke-width: 1.5; }
+  #stage.spot .node:not(.pick):not(.focus) { opacity: .28; }
+  #stage.spot .edge { opacity: .07; }
+  #stage.spot .edge.pick { stroke: var(--accent); opacity: 1; stroke-width: 2.4; stroke-dasharray: none; marker-end: url(#arrow-hl); }
+  .node.pick { --fill: var(--accent); border-color: var(--accent); color: #fff; }
+  .node.pick .ntitle, .node.pick .nbody.words { color: #fff; }
+  .node.pick .ntitle { background: var(--accent); }
+  .node.pick .usage { background: #fff; opacity: .9; }
+  .node.pick .dot { outline: 1.5px solid #fff; }
+  /* the full statement of the node under the pointer */
+  #tip { position: absolute; z-index: 5; max-width: min(560px, 80%); padding: 10px 14px; pointer-events: none;
+         background: var(--surface); border: 1px solid var(--line); border-radius: 9px; box-shadow: 0 8px 28px rgb(0 0 0 / .18); }
+  #tip[hidden] { display: none; }
   #proof .hint { color: var(--muted); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
   #arrow path { fill: var(--edge); } #arrow-hl path { fill: var(--accent); }
   .colhead { font: 600 12px var(--sans); fill: var(--text); text-anchor: middle; }
@@ -176,7 +192,9 @@
       </span>
     </span>
     <label>show up to
-      <select id="limit"><option>25</option><option>50</option><option>100</option></select> per level</label>
+      <select id="limit"><option>10</option><option>25</option><option>50</option><option>100</option></select> per level</label>
+    <label title="Formulas: each node shows the conclusion of its statement. Names: compact boxes with the Lean name only">nodes as
+      <select id="nodestyle"><option value="formulas">formulas</option><option value="names">names</option></select></label>
     <label title="What the number and bar on each node measure">nodes show
       <select id="metric">
         <option value="reach">all uses</option>
@@ -195,8 +213,10 @@
         <marker id="arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L8 4L0 8z"/></marker>
         <marker id="arrow-hl" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L8 4L0 8z"/></marker>
       </defs>
-      <g id="view"><g id="edges"></g><g id="nodes"></g><g id="labels"></g></g>
+      <g id="view"><g id="edges"></g><g id="labels"></g></g>
     </svg>
+    <div id="boxes"></div>
+    <div id="tip" hidden></div>
     <div id="message" hidden><div></div></div>
     <div class="legend" id="legend"></div>
     <div class="zoom">
@@ -241,7 +261,7 @@ const KINDS = ['theorem', 'definition', 'abbrev', 'inductive', 'constructor', 'o
 const kindColor = (k) => `var(--k-${KINDS.includes(k) ? k : 'unknown'})`;
 const EXAMPLES = ['Nat.add_comm', 'Real.sqrt_nonneg', 'Commute.exp_right'];
 
-const NODE_W = 276, NODE_H = 26, ROW = 32, COL = 370, MAX_CHARS = 29;
+const MAX_CHARS = 46; // a node's name, on its top edge
 // A count short enough to fit in a node: 183, 1.7k, 70k.
 const compact = (n) => (n < 1000 ? String(n) : n < 10000 ? (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k' : Math.round(n / 1000) + 'k');
 // The same count as a share of the node's width, on a log scale: the foundations of Mathlib
@@ -286,7 +306,7 @@ const usedByText = (n) => n.reach === null || n.reach === undefined
   ? `used by ${fmt(n.in_degree)} declaration${n.in_degree === 1 ? '' : 's'}`
   : n.reach === 0 ? 'nothing in Mathlib uses it'
   : `used by ${n.reach > 128 ? 'about ' : ''}${fmt(n.reach)} declaration${n.reach === 1 ? '' : 's'} in all, ${fmt(n.in_degree)} directly`;
-const shorten = (s) => (s.length <= MAX_CHARS ? s : s.slice(0, 10) + '…' + s.slice(-(MAX_CHARS - 11)));
+const shorten = (s) => (s.length <= MAX_CHARS ? s : s.slice(0, 14) + '…' + s.slice(-(MAX_CHARS - 15)));
 
 // ---------- state lives in the URL hash ----------
 function readState() {
@@ -296,7 +316,7 @@ function readState() {
     n: p.get('n') || '',
     d: [1, 2, 3].includes(d) ? d : 1,
     e: p.get('e') !== '0',
-    l: [25, 50, 100].includes(l) ? l : 25,
+    l: [10, 25, 50, 100].includes(l) ? l : 10,
     p: p.get('p') === '1', // show Lean core plumbing; hidden unless asked for
     t: p.get('t') === '1', // theorems only
   };
@@ -311,10 +331,15 @@ function go(patch) {
 }
 
 // ---------- pan / zoom ----------
-const svg = $('svg'), view = $('view');
+// The graph is two layers under one camera: an SVG for the edges and column headings, and
+// HTML boxes for the nodes (formulas are typeset as HTML, which SVG cannot hold reliably).
+const svg = $('svg'), view = $('view'), stage = $('stage'), boxes = $('boxes');
 const cam = { x: 0, y: 0, k: 1 };
 let bbox = null;
-const applyCam = () => view.setAttribute('transform', `translate(${cam.x},${cam.y}) scale(${cam.k})`);
+const applyCam = () => {
+  view.setAttribute('transform', `translate(${cam.x},${cam.y}) scale(${cam.k})`);
+  boxes.style.transform = `translate(${cam.x}px,${cam.y}px) scale(${cam.k})`;
+};
 function zoomAt(px, py, factor) {
   const k = Math.min(2.5, Math.max(0.15, cam.k * factor));
   cam.x = px - (px - cam.x) * (k / cam.k);
@@ -332,8 +357,8 @@ function fit() {
   applyCam();
 }
 let drag = null, moved = false;
-svg.addEventListener('pointerdown', (e) => {
-  if (e.button !== 0) return;
+stage.addEventListener('pointerdown', (e) => {
+  if (e.button !== 0 || e.target.closest('button, a, .legend, #message')) return;
   drag = { x: e.clientX, y: e.clientY, cx: cam.x, cy: cam.y };
   moved = false;
 });
@@ -342,14 +367,17 @@ window.addEventListener('pointermove', (e) => {
   const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
   if (!moved && Math.hypot(dx, dy) < 4) return;
   moved = true;
-  svg.classList.add('dragging');
+  hideTip();
+  stage.classList.add('dragging');
   cam.x = drag.cx + dx;
   cam.y = drag.cy + dy;
   applyCam();
 });
-window.addEventListener('pointerup', () => { drag = null; svg.classList.remove('dragging'); });
-svg.addEventListener('wheel', (e) => {
+window.addEventListener('pointerup', () => { drag = null; stage.classList.remove('dragging'); });
+stage.addEventListener('wheel', (e) => {
+  if (e.target.closest('#message')) return;
   e.preventDefault();
+  hideTip();
   const r = svg.getBoundingClientRect();
   if (e.ctrlKey || e.metaKey) zoomAt(e.clientX - r.left, e.clientY - r.top, Math.exp(-e.deltaY * 0.01));
   else { cam.x -= e.deltaX; cam.y -= e.deltaY; applyCam(); }
@@ -366,84 +394,177 @@ function showMessage(...content) {
   box.hidden = content.length === 0;
 }
 function clearGraph() {
-  for (const id of ['edges', 'nodes', 'labels']) $(id).replaceChildren();
+  for (const id of ['edges', 'labels', 'boxes']) $(id).replaceChildren();
   nodeByName = new Map();
   focusNode = null;
-  svg.classList.remove('hovering', 'spot');
+  stage.classList.remove('hovering', 'spot');
+  hideTip();
   $('proof-hint').textContent = ''; // a hovered node removed by a refocus never gets its pointerleave
   bbox = null;
 }
 const exampleLinks = () => EXAMPLES.flatMap((n, i) => [i ? ' · ' : '', h('a', { href: '#n=' + encodeURIComponent(n), textContent: n })]);
 
-let lastDrawn = null; // what the graph shows, to redraw it when only the node measure changes
+// Whether nodes carry their formula or only their name; a reader's preference, kept in this browser.
+let chosenStyle = null;
+function nodeStyle() {
+  if (chosenStyle) return chosenStyle;
+  try { return localStorage.getItem('nodeStyle') === 'names' ? 'names' : 'formulas'; } catch { return 'formulas'; }
+}
+
+// What a node says under its name: the conclusion of its statement, typeset; for a definition,
+// the opening of its docstring; nothing when the source has neither (or in the names-only view).
+function nodeBody(n) {
+  if (nodeStyle() === 'names') return null;
+  if (n.statement && window.LeanLatex && window.katex) {
+    const tex = LeanLatex.toLatex(n.statement, n.name, n.context, { notation: notation() });
+    if (tex && tex.thesis) {
+      try {
+        const body = h('div', { className: 'nbody' });
+        katex.render(tex.thesis, body, { displayMode: false, throwOnError: true, strict: false });
+        return body;
+      } catch { /* a formula KaTeX rejects: fall through to the docstring */ }
+    }
+  }
+  if (n.doc) {
+    const first = n.doc.split(/\n\s*\n/)[0].replace(/\s+/g, ' ').trim();
+    const short = first.length > 150 ? first.slice(0, first.lastIndexOf(' ', 150)) + ' …' : first;
+    return h('div', { className: 'nbody words' }, docText(short));
+  }
+  return null;
+}
+
+// The full statement of the node under the pointer, hypotheses included: a node shows only
+// the conclusion, which can mislead on its own.
+let tipFor = null;
+function showTip(n, box) {
+  const full = n.statement ? renderMath(n.statement, n.name, n.context) : null;
+  if (!full || nodeStyle() === 'names' && !full) return hideTip();
+  tipFor = box;
+  const tip = $('tip');
+  tip.replaceChildren(full[0]);
+  tip.hidden = false;
+  const area = stage.getBoundingClientRect(), r = box.getBoundingClientRect(), t = tip.getBoundingClientRect();
+  const left = Math.max(8, Math.min(area.width - t.width - 8, r.left - area.left));
+  const below = r.bottom - area.top + 8, above = r.top - area.top - t.height - 8;
+  tip.style.left = left + 'px';
+  tip.style.top = (below + t.height <= area.height - 8 || above < 8 ? below : above) + 'px';
+}
+function hideTip() {
+  tipFor = null;
+  $('tip').hidden = true;
+}
+
+// The layout depends on how tall the graph area is (columns are centred only when they
+// fit), so a change in that height means laying the graph out again, not just re-fitting it.
+function relayout() {
+  if (lastDrawn) draw(lastDrawn.data, lastDrawn.state);
+}
+
+const GAP_X = 110, GAP_Y = 24, EMPTY_W = 250;
+let lastDrawn = null; // what the graph shows, to redraw it when only how nodes look changes
 function draw(data, state) {
   lastDrawn = { data, state };
   clearGraph();
   const { height: H } = svg.getBoundingClientRect();
-  const cols = []; // {x, side, dist, nodes}
-  for (const [side, sign] of [['out', -1], ['in', 1]]) {
-    for (let d = 1; d <= state.d; d++) {
-      cols.push({ side, dist: d, x: sign * d * COL, nodes: data[side].nodes.filter((n) => n.dist === d) });
-    }
-  }
-  const tallest = Math.max(1, ...cols.map((c) => c.nodes.length));
-  const centred = tallest * ROW + 90 <= H; // otherwise top-align so the best-ranked nodes are on screen
-  const yOf = (i, n) => (centred ? (i - (n - 1) / 2) * ROW : i * ROW);
-  const top = centred ? -((tallest - 1) / 2) * ROW : 0;
-
-  const pos = { out: new Map(), in: new Map() };
   const edgesOf = new Map(); // node element -> edge elements
-  const focusPos = { x: 0, y: 0 };
-  pos.out.set(data.focus.id, focusPos);
-  pos.in.set(data.focus.id, focusPos);
 
-  const addNode = (n, x, y, isFocus) => {
-    const g = el('g', { class: 'node' + (isFocus ? ' focus' : '') + (n.kind ? '' : ' stub'), transform: `translate(${x},${y})` });
-    g.append(
-      el('title', {}, n.name + (n.kind ? ` — ${n.kind}` : '') +
-        (n.in_degree === null ? '' : ` — ${usedByText(n)} — PageRank ${Number(n.pagerank).toExponential(2)}, ${timesAverage(n.pagerank)} the average`)),
-      el('rect', { x: -NODE_W / 2, y: -NODE_H / 2, width: NODE_W, height: NODE_H, rx: 7 }),
-      el('circle', { cx: -NODE_W / 2 + 13, cy: 0, r: 4.5, fill: kindColor(n.kind) }),
-      el('text', { x: -NODE_W / 2 + 24, y: 0.5 }, shorten(n.name))
-    );
+  const addNode = (n, isFocus) => {
+    const body = nodeBody(n);
+    const box = h('div', { className: 'node' + (isFocus ? ' focus' : '') + (n.kind ? '' : ' stub') + (body ? '' : ' compact') });
+    box.title = n.name + (n.kind ? ` — ${n.kind}` : '') +
+      (n.in_degree === null ? '' : ` — ${usedByText(n)} — PageRank ${Number(n.pagerank).toExponential(2)}, ${timesAverage(n.pagerank)} the average`);
+    const dot = h('span', { className: 'dot' });
+    dot.style.background = kindColor(n.kind);
+    const title = h('div', { className: 'ntitle' }, dot, h('span', { className: 'nname', textContent: shorten(n.name) }));
+    box.append(title);
+    if (body) box.append(body);
     if (n.in_degree !== null) {
-      // How much of Mathlib rests on this declaration, by the chosen measure: a number, and a bar under the name.
+      // How much of Mathlib rests on this declaration, by the chosen measure: a number, and a bar along the bottom.
       const shown = METRICS[metric()].of(n);
-      g.append(el('text', { class: 'count' + (shown.zero ? ' zero' : ''), x: NODE_W / 2 - 9, y: 0.5 }, shown.label));
-      const width = (NODE_W - 16) * shown.share;
-      if (width > 0) g.append(el('rect', { class: 'usage', x: -NODE_W / 2 + 8, y: NODE_H / 2 - 4.5, width: Math.max(2, width), height: 2.5, rx: 1.25 }));
+      title.append(h('span', { className: 'count' + (shown.zero ? ' zero' : ''), textContent: shown.label }));
+      if (shown.share > 0) {
+        const bar = h('div', { className: 'usage' });
+        bar.style.width = `calc(${shown.share.toFixed(4)} * (100% - 20px))`;
+        box.append(bar);
+      }
     }
-    edgesOf.set(g, (g.edgeEls = []));
+    edgesOf.set(box, (box.edgeEls = []));
     if (!isFocus) {
-      g.setAttribute('tabindex', '0');
-      g.setAttribute('role', 'link');
-      g.setAttribute('aria-label', n.name);
-      g.addEventListener('click', () => { if (!moved) go({ n: n.name }); });
-      g.addEventListener('keydown', (e) => { if (e.key === 'Enter') go({ n: n.name }); });
+      box.tabIndex = 0;
+      box.setAttribute('role', 'link');
+      box.setAttribute('aria-label', n.name);
+      box.addEventListener('click', () => { if (!moved) go({ n: n.name }); });
+      box.addEventListener('keydown', (e) => { if (e.key === 'Enter') go({ n: n.name }); });
     }
     const on = (flag) => () => {
-      svg.classList.toggle('hovering', flag);
-      g.classList.toggle('hl', flag);
-      for (const p of edgesOf.get(g)) { p.classList.toggle('hl', flag); p.ends.forEach((o) => o !== g && o.classList.toggle('hl', flag)); }
+      stage.classList.toggle('hovering', flag);
+      box.classList.toggle('hl', flag);
+      for (const p of edgesOf.get(box)) { p.classList.toggle('hl', flag); p.ends.forEach((o) => o !== box && o.classList.toggle('hl', flag)); }
+      if (flag && !isFocus && !drag) showTip(n, box);
+      else if (!flag && tipFor === box) hideTip();
     };
-    g.addEventListener('pointerenter', on(true));
-    g.addEventListener('pointerleave', on(false));
-    g.addEventListener('focus', on(true));
-    g.addEventListener('blur', on(false));
-    if (!nodeByName.has(n.name)) nodeByName.set(n.name, g);
-    $('nodes').append(g);
-    return g;
+    box.addEventListener('pointerenter', on(true));
+    box.addEventListener('pointerleave', on(false));
+    box.addEventListener('focus', on(true));
+    box.addEventListener('blur', on(false));
+    if (!nodeByName.has(n.name)) nodeByName.set(n.name, box);
+    boxes.append(box);
+    return box;
   };
 
-  const focusEl = (focusNode = addNode(data.focus, 0, 0, true));
+  // Build every box first: their sizes, which depend on the formulas, decide the layout.
+  const focusEl = (focusNode = addNode(data.focus, true));
+  const cols = [];
+  for (const side of ['out', 'in']) {
+    for (let d = 1; d <= state.d; d++) {
+      const nodes = data[side].nodes.filter((n) => n.dist === d);
+      cols.push({ side, dist: d, nodes, els: nodes.map((n) => addNode(n, false)) });
+    }
+  }
+  const size = (box) => ({ w: box.offsetWidth, h: box.offsetHeight });
+  const focusSize = size(focusEl);
+  for (const c of cols) {
+    c.sizes = c.els.map(size);
+    c.width = c.sizes.length ? Math.max(...c.sizes.map((s) => s.w)) : EMPTY_W;
+    c.height = c.sizes.reduce((sum, s) => sum + s.h, 0) + GAP_Y * Math.max(0, c.sizes.length - 1);
+  }
+  // Columns side by side: dependencies to the left of the focus, dependents to the right,
+  // each box flush against the side that faces the focus.
+  let edge = -focusSize.w / 2 - GAP_X;
+  for (const c of cols.filter((c) => c.side === 'out')) { c.inner = edge; c.mid = edge - c.width / 2; edge -= c.width + GAP_X; }
+  edge = focusSize.w / 2 + GAP_X;
+  for (const c of cols.filter((c) => c.side === 'in')) { c.inner = edge; c.mid = edge + c.width / 2; edge += c.width + GAP_X; }
+  // Centre the columns on the focus when they fit; otherwise start them all at the top, so
+  // the best-ranked nodes are on screen.
+  const tallest = Math.max(focusSize.h, ...cols.map((c) => c.height));
+  const centred = tallest + 110 <= H;
+  const top = centred ? -tallest / 2 : -focusSize.h / 2;
+
+  const rects = { out: new Map(), in: new Map() }; // node id -> { l, r, y, col }
+  const place = (box, l, t, s, col) => {
+    box.style.left = l + 'px';
+    box.style.top = t + 'px';
+    return { l, r: l + s.w, y: t + s.h / 2, b: t + s.h, col };
+  };
+  const focusRect = place(focusEl, -focusSize.w / 2, -focusSize.h / 2, focusSize, null);
+  rects.out.set(data.focus.id, focusRect);
+  rects.in.set(data.focus.id, focusRect);
   const elOf = { out: new Map([[data.focus.id, focusEl]]), in: new Map([[data.focus.id, focusEl]]) };
+  let x0 = focusRect.l, x1 = focusRect.r, y1 = focusRect.b;
 
   for (const c of cols) {
+    let y = centred ? -c.height / 2 : top;
     c.nodes.forEach((n, i) => {
-      const p = { x: c.x, y: yOf(i, c.nodes.length) };
-      pos[c.side].set(n.id, p);
-      elOf[c.side].set(n.id, addNode(n, p.x, p.y, false));
+      const s = c.sizes[i];
+      const rect = place(c.els[i], c.side === 'out' ? c.inner - s.w : c.inner, y, s, c);
+      rects[c.side].set(n.id, rect);
+      elOf[c.side].set(n.id, c.els[i]);
+      y += s.h + GAP_Y;
+      y1 = Math.max(y1, rect.b);
     });
+    x0 = Math.min(x0, c.mid - c.width / 2);
+    x1 = Math.max(x1, c.mid + c.width / 2);
+
     const total = data[c.side].totals[c.dist - 1] ?? 0;
     const shown = c.nodes.length;
     const head = c.side === 'out'
@@ -454,43 +575,42 @@ function draw(data, state) {
     const sub = (total === 0 ? 'none' : shown >= total ? `${fmt(total)}`
       : named ? `${fmt(named)} named in the code + top ${fmt(shown - named)} of ${fmt(total)} by PageRank`
       : `top ${fmt(shown)} of ${fmt(total)} by PageRank`) + (hiddenCount ? ` · ${fmt(hiddenCount)} hidden by filters` : '');
-    $('labels').append(el('text', { class: 'colhead', x: c.x, y: top - 46 }, head), el('text', { class: 'colsub', x: c.x, y: top - 30 }, sub));
+    $('labels').append(el('text', { class: 'colhead', x: c.mid, y: top - 52 }, head), el('text', { class: 'colsub', x: c.mid, y: top - 36 }, sub));
     if (c.dist === 1 && total === 0) {
       const what = c.side === 'out' ? 'dependencies' : 'dependents';
       const lines = state.e ? [`No explicit ${what}.`, 'Turn off “explicit only” to see the rest.'] : [`No ${what} in the dataset.`];
-      lines.forEach((t, i) => $('labels').append(el('text', { class: 'empty', x: c.x, y: i * 18 - (lines.length - 1) * 9 + 4 }, t)));
+      lines.forEach((t, i) => $('labels').append(el('text', { class: 'empty', x: c.mid, y: i * 18 - (lines.length - 1) * 9 + 4 }, t)));
     }
   }
-  $('labels').append(el('text', { class: 'colhead', x: 0, y: top - 46 }, 'focus'));
+  $('labels').append(el('text', { class: 'colhead', x: 0, y: top - 52 }, 'focus'));
 
   for (const side of ['out', 'in']) {
     const outer = side === 'out' ? -1 : 1;
     for (const [s, d, explicit] of data[side].edges) {
-      const a = pos[side].get(s), b = pos[side].get(d);
+      const a = rects[side].get(s), b = rects[side].get(d);
       if (!a || !b) continue;
-      if (side === 'in' && s === data.focus.id && pos.out.has(d) && d !== data.focus.id) continue;
+      if (side === 'in' && s === data.focus.id && rects.out.has(d) && d !== data.focus.id) continue;
       let path;
-      if (a.x === b.x) {
-        const x = a.x + outer * NODE_W / 2, bulge = outer * (26 + Math.min(60, Math.abs(a.y - b.y) / 6));
-        path = `M${x},${a.y} C${x + bulge},${a.y} ${x + bulge},${b.y} ${x},${b.y}`;
+      if (a.col === b.col) {
+        // Two nodes of one column: loop around the side away from the focus.
+        const ax = outer < 0 ? a.l : a.r, bx = outer < 0 ? b.l : b.r;
+        const reach = (outer < 0 ? Math.min(ax, bx) : Math.max(ax, bx)) + outer * (30 + Math.min(60, Math.abs(a.y - b.y) / 6));
+        path = `M${ax},${a.y} C${reach},${a.y} ${reach},${b.y} ${bx},${b.y}`;
       } else {
-        const dir = a.x > b.x ? -1 : 1;
-        const x1 = a.x + dir * NODE_W / 2, x2 = b.x - dir * NODE_W / 2, bend = Math.max(30, Math.abs(x2 - x1) / 2);
-        path = `M${x1},${a.y} C${x1 + dir * bend},${a.y} ${x2 - dir * bend},${b.y} ${x2},${b.y}`;
+        const dir = a.l > b.l ? -1 : 1;
+        const xa = dir < 0 ? a.l : a.r, xb = dir < 0 ? b.r : b.l, bend = Math.max(30, Math.abs(xb - xa) / 2);
+        path = `M${xa},${a.y} C${xa + dir * bend},${a.y} ${xb - dir * bend},${b.y} ${xb},${b.y}`;
       }
       const p = el('path', { class: 'edge' + (explicit ? '' : ' syn'), d: path });
       p.ends = [elOf[side].get(s), elOf[side].get(d)];
-      p.ends.forEach((g) => edgesOf.get(g).push(p));
+      p.ends.forEach((box) => edgesOf.get(box).push(p));
       $('edges').append(p);
     }
   }
 
-  const xs = cols.map((c) => c.x).concat(0);
-  const lowest = centred ? ((tallest - 1) / 2) * ROW : (tallest - 1) * ROW;
-  bbox = { x0: Math.min(...xs) - NODE_W / 2, x1: Math.max(...xs) + NODE_W / 2, y0: top - 60, y1: lowest + NODE_H };
+  bbox = { x0, x1, y0: top - 70, y1 };
   fit();
 }
-
 function row(dl, label, value, mono) {
   if (value === null || value === undefined || value === '') return;
   dl.append(h('dt', { textContent: label }), h('dd', mono ? { className: 'mono' } : {}, value));
@@ -512,8 +632,8 @@ function spotlight(name, on) {
   $('proof-hint').textContent = on && !g
     ? `${name} is not drawn` + (readState().e ? ' — turn off “explicit only” to see it' : '')
     : '';
-  svg.querySelectorAll('.pick').forEach((e) => e.classList.remove('pick'));
-  svg.classList.toggle('spot', on && !!g);
+  stage.querySelectorAll('.pick').forEach((e) => e.classList.remove('pick'));
+  stage.classList.toggle('spot', on && !!g);
   if (!on || !g) return;
   g.classList.add('pick');
   for (const p of g.edgeEls || []) if (p.ends.includes(focusNode)) p.classList.add('pick');
@@ -556,13 +676,13 @@ function showProof(p) {
     $('proof-code').replaceChildren(renderLean(p.body, p.deps, p.name));
     panel.querySelector('pre').scrollTop = 0;
   }
-  if (wasHidden !== panel.hidden) fit(); // the graph area changed height
+  if (wasHidden !== panel.hidden) relayout(); // the graph area changed height
 }
 $('proof-toggle').onclick = (e) => {
   const collapsed = $('proof').classList.toggle('collapsed');
   e.target.textContent = collapsed ? 'Show' : 'Hide';
   e.target.setAttribute('aria-expanded', String(!collapsed));
-  fit();
+  relayout();
 };
 
 // The graph keeps only the top-ranked dependencies, which are the generic ones. Once the
@@ -624,6 +744,7 @@ $('notation').value = notation();
 $('notation').onchange = (e) => {
   try { localStorage.setItem('notation', e.target.value); } catch { /* private mode: applies to this page only */ }
   drawBand();
+  if (lastDrawn) draw(lastDrawn.data, lastDrawn.state); // the formulas in the nodes follow the notation too
 };
 
 // Above the graph: what the source says about the declaration, then its statement typeset.
@@ -642,7 +763,7 @@ function showTheorem(nodes) {
   band.replaceChildren(...(nodes || []));
   band.hidden = !nodes;
   band.scrollTop = 0;
-  if (wasHidden !== band.hidden) fit(); // the graph area changed height
+  if (wasHidden !== band.hidden) relayout(); // the graph area changed height
 }
 
 // Fills `box` with the declaration's Lean statement, read from its source file on GitHub;
@@ -772,12 +893,18 @@ async function load() {
   drawPanel(data);
 }
 window.addEventListener('hashchange', load);
-window.addEventListener('resize', () => bbox && fit());
+window.addEventListener('resize', relayout);
 
 // ---------- controls ----------
 $('explicit').onchange = (e) => go({ e: e.target.checked });
 $('plumbing').onchange = (e) => go({ p: !e.target.checked });
 $('theorems').onchange = (e) => go({ t: e.target.checked });
+$('nodestyle').value = nodeStyle();
+$('nodestyle').onchange = (e) => {
+  chosenStyle = e.target.value === 'names' ? 'names' : 'formulas';
+  try { localStorage.setItem('nodeStyle', chosenStyle); } catch { /* private mode: applies to this page only */ }
+  if (lastDrawn) draw(lastDrawn.data, lastDrawn.state);
+};
 $('metric').value = metric();
 $('metric').onchange = (e) => {
   chosenMetric = Object.hasOwn(METRICS, e.target.value) ? e.target.value : 'reach';
@@ -861,7 +988,7 @@ if (!readState().n) history.replaceState(null, '', '#n=' + encodeURIComponent(DE
 $('home').addEventListener('click', (e) => {
   if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return; // let "open in new tab" work
   e.preventDefault();
-  go({ n: DEFAULT_FOCUS, d: 1, e: true, l: 25, p: false, t: false });
+  go({ n: DEFAULT_FOCUS, d: 1, e: true, l: 10, p: false, t: false });
 });
 load();
 </script>

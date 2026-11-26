@@ -48,6 +48,9 @@
 
   function ident(name) {
     if (name === '𝕜') return '\\Bbbk';
+    // Script capitals (𝓝 neighbourhoods, 𝓤 uniformity, 𝓟 principal filter …) have their own alphabet in LaTeX.
+    const script = /^[\u{1D4D0}-\u{1D4E9}]$/u.test(name) ? name.codePointAt(0) - 0x1D4D0 : -1;
+    if (script >= 0) return `\\mathcal{${String.fromCharCode(65 + script)}}`;
     let m = /^([A-Za-z])(\d*)([\u2080-\u2089]*)('*)$/.exec(name);
     if (m) return m[1] + (m[2] || m[3] ? `_{${m[2]}${unsub(m[3])}}` : '') + m[4];
     m = /^(\p{Script=Greek})([\u2080-\u2089]*)('*)$/u.exec(name);
@@ -442,7 +445,8 @@
     });
   }
 
-  // Returns { kind, parts, source } or null when the statement is not one this can render.
+  // Returns { kind, parts, source, thesis } or null when the statement is not one this can render.
+  // `thesis` is the conclusion alone as LaTeX (null for a definition, which states nothing).
   // `parts` alternate prose ({ text }) and formulas ({ math, display? }); `source` is LaTeX.
   // `context` is the binder text of the `variable` commands in scope, if known.
   function toLatex(statement, fullName, context, options) {
@@ -498,7 +502,8 @@
         if (/^(Type|Sort)\b/.test(type)) { names.forEach((n) => { typeVars.add(n); subject(n); }); continue; }
         // Hypotheses are usually called h, hx, h₁ … or given a descriptive name such as f_mble.
         const named = names.every((n) => /^h[\p{L}\p{N}_'₀-₉]*$/u.test(n) || n.includes('_')) && !NUMBER_SET.test(type) && !/^Prop\b/.test(type);
-        if (hasTopLevel(type, RELATION) || named) hyps.push(expr(type));
+        // The ≥ in the names ℝ≥0 and ℝ≥0∞ is part of the name, not a relation.
+        if (hasTopLevel(type.replace(/ℝ≥0∞?/g, 'ℝ'), RELATION) || named) hyps.push(expr(type));
         else {
           const typeItems = nest(lex(type));
           const shown = names.map(ident).join(', ');
@@ -565,7 +570,7 @@
         `\\[ ${shown} \\]`,
         `\\end{${env}}`,
       ].join('\n');
-      return { kind, parts, source };
+      return { kind, parts, source, thesis: proposition ? shown : null };
     } catch {
       return null;
     } finally {

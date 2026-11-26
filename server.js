@@ -2,12 +2,11 @@ const fs = require('node:fs');
 const http = require('node:http');
 const path = require('node:path');
 const { open, search, neighborhood } = require('./lib/graphdb');
-const { findDeclaration, modulePath, redirects } = require('./lib/leansource');
+const { locate, localSource, modulePath } = require('./lib/leansource');
 
 const GITHUB = 'https://github.com/leanprover-community/mathlib4/blob/master/';
 const RAW = 'https://raw.githubusercontent.com/leanprover-community/mathlib4/master/';
 const CACHE_FILES = 40;
-const MAX_FILES_PER_LOOKUP = 6;
 const MAX_BODY = 256 * 1024;
 
 // Downloads one Lean file from Mathlib's master branch; null when it is not there.
@@ -50,34 +49,20 @@ function createServer(dbPath, { fetchSource = fetchFromGitHub } = {}) {
     const filePath = modulePath(node.file_module);
     if (!filePath) return { found: false, reason: 'no_source_file' };
     // Start at the file the snapshot names; if it has since moved, follow its deprecation shim.
-    const queue = [filePath];
-    const seen = new Set(queue);
-    let first = true;
-    while (queue.length && seen.size <= MAX_FILES_PER_LOOKUP) {
-      const current = queue.shift();
-      let text;
-      try {
-        text = await sourceText(current);
-      } catch {
-        return { found: false, reason: 'fetch_failed' };
-      }
-      if (text === null && first) return { found: false, reason: 'file_missing' };
-      first = false;
-      if (text === null) continue;
-      const decl = findDeclaration(text, name);
-      if (decl) {
-        // Every direct dependency, so the page can link the names used in the text.
-        const deps = db
-          .prepare('SELECT n.name FROM edges e JOIN nodes n ON n.id = e.dst WHERE e.src = ? ORDER BY n.name')
-          .all(node.id)
-          .map((r) => r.name);
-        return { found: true, ...decl, deps, url: `${GITHUB}${current}#L${decl.line}` };
-      }
-      for (const next of redirects(text)) {
-        if (!seen.has(next)) { seen.add(next); queue.push(next); }
-      }
+    let decl;
+    try {
+      decl = await locate(sourceText, filePath, name);
+    } catch {
+      return { found: false, reason: 'fetch_failed' };
     }
-    return { found: false, reason: 'not_in_file' };
+    if (decl.missing) return { found: false, reason: decl.missing };
+    // Every direct dependency, so the page can link the names used in the text.
+    const deps = db
+      .prepare('SELECT n.name FROM edges e JOIN nodes n ON n.id = e.dst WHERE e.src = ? ORDER BY n.name')
+      .all(node.id)
+      .map((r) => r.name);
+    const { path: foundIn, ...rest } = decl;
+    return { found: true, ...rest, deps, url: `${GITHUB}${foundIn}#L${decl.line}` };
   };
 
   const json = (res, status, body) => {
@@ -174,7 +159,10 @@ if (require.main === module) {
     process.exit(1);
   }
   const port = Number(process.env.PORT) || 5173;
-  createServer(dbPath).listen(port, '127.0.0.1', () => {
+  // Read Lean files from the local checkout that build.js makes; without one, from GitHub.
+  const checkout = path.join(__dirname, 'data', 'mathlib4');
+  const fetchSource = fs.existsSync(path.join(checkout, 'Mathlib')) ? localSource(checkout) : fetchFromGitHub;
+  createServer(dbPath, { fetchSource }).listen(port, '127.0.0.1', () => {
     console.log(`Mathlib graph navigator: http://127.0.0.1:${port}/`);
   });
 }

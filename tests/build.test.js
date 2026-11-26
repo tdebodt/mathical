@@ -66,3 +66,32 @@ test('rebuilding replaces an existing database', async () => {
   assert.equal(fs.existsSync(dbPath + '.tmp'), false);
   assert.equal(open(dbPath).prepare('SELECT COUNT(*) c FROM nodes').get().c, 44);
 });
+
+test('with a source checkout, the build stores each declaration\'s statement, context and docstring', async () => {
+  const os = require('node:os');
+  const out = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'mathical-src-')), 'with-source.db');
+  const built = await buildDb({
+    edgesCsv: path.join(fixtures, 'edges.csv'),
+    metricsCsv: path.join(fixtures, 'metrics.csv'),
+    dbPath: out,
+    sourceDir: path.join(fixtures, 'src'),
+  });
+  const withSource = open(out);
+  const row = (name) => ({ ...withSource.prepare('SELECT statement, context, doc FROM nodes WHERE name = ?').get(name) });
+  assert.deepEqual(row('Thm'), {
+    statement: 'theorem Thm (x : α) (h : x ≠ 0) : x / x = 1',
+    context: '{α : Type*} [Field α]',
+    doc: 'The main theorem.\nIt has a second line.',
+  });
+  assert.equal(row('Hub').doc, 'A hub definition.');
+  assert.equal(row('A').statement, 'lemma A : (1 : α) ≠ 0');
+  assert.equal(row('Core').statement, 'theorem Core (n : ℕ) : n = n'); // found through the deprecation shim
+  assert.deepEqual(row('B'), { statement: null, context: null, doc: null }); // not written in its file
+  assert.deepEqual(row('Eq.mpr'), { statement: null, context: null, doc: null }); // no source file at all
+  assert.equal(built.statements, 5); // Thm, A, Hub, axb, Core
+});
+
+test('without a source checkout the statement columns stay empty', () => {
+  assert.equal(db.prepare('SELECT COUNT(*) c FROM nodes WHERE statement IS NOT NULL').get().c, 0);
+  assert.equal(res.statements, 0);
+});

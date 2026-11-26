@@ -358,3 +358,21 @@ test('inner products: double angle brackets, with the scalar field as a subscrip
   const r = toLatex('theorem t (x y : F) :\n    ‖x - y‖ * ‖x - y‖ = ‖x‖ * ‖x‖ + ‖y‖ * ‖y‖ ↔ ⟪x, y⟫_ℝ = 0', 't', '{F : Type*} [SeminormedAddCommGroup F] [InnerProductSpace ℝ F]');
   assert.equal(r.parts.at(-1).math, '\\| x - y \\|^{2} = \\| x \\|^{2} + \\| y \\|^{2} \\iff \\langle x, y \\rangle_{\\mathbb{R}} = 0');
 });
+
+test('thesis: the conclusion alone, for a node in the graph', () => {
+  assert.equal(toLatex('theorem div_pos (ha : 0 < a) (hb : 0 < b) : 0 < a / b', 'div_pos').thesis, '0 < \\frac{a}{b}');
+  assert.equal(toLatex('lemma foo (x : ℝ) : 0 ≤ x ^ 2', 'foo').thesis, '0 \\le x^{2}');
+  assert.equal(toLatex('noncomputable def sqrt (x : ℝ) : ℝ', 'Real.sqrt').thesis, null); // a definition states nothing
+  assert.equal(toLatex('theorem t : ∠ A B C = π / 2', 'EuclideanGeometry.t', '', { notation: 'fr' }).thesis, '\\widehat{A B C} = \\frac{\\pi}{2}');
+});
+
+test('expr: script capitals such as the neighbourhood filter 𝓝', () => {
+  assert.equal(expr('Tendsto f l (𝓝 a)'), '\\mathrm{Tendsto}\\,f\\,l\\,\\left(\\mathcal{N}\\,a\\right)');
+  assert.equal(expr('s ∈ 𝓤 α'), 's \\in \\mathcal{U}\\,\\alpha');
+  assert.equal(expr('𝓝[s] a'), '\\mathcal{N}\\,\\left[s\\right]\\,a');
+});
+
+test('a variable of type ℝ≥0 is a variable, not a hypothesis', () => {
+  assert.equal(prose('theorem coe_nonneg (r : ℝ≥0) (x : ℝ≥0∞) : (0 : ℝ) ≤ r'),
+    'Let $r \\in \\mathbb{R}_{\\ge 0}$, $x \\in \\overline{\\mathbb{R}}_{\\ge 0}$. Then');
+});

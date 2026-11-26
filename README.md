@@ -8,12 +8,12 @@ Data: [CloK-Lab/MathlibGraph](https://huggingface.co/datasets/CloK-Lab/MathlibGr
 
 ## Requirements
 
-Node.js 22 or newer. No npm packages.
+Node.js 22 or newer and `git` (the build clones Mathlib's source). No npm packages.
 
 ## Run
 
 ```sh
-node build.js     # once: downloads ~640 MB into data/ and builds data/mathlib.db (~260 MB)
+node build.js     # once: downloads ~640 MB of data, clones Mathlib (~150 MB), builds data/mathlib.db (~340 MB)
 node server.js    # then open http://127.0.0.1:5173/
 ```
 
@@ -24,6 +24,11 @@ about SQLite; add `--disable-warning=ExperimentalWarning` to hide it.
 
 - Search by name (`/` focuses the search box), or open a link such as
   `http://127.0.0.1:5173/#n=Real.sqrt_nonneg`.
+- Each node is a box with the declaration's name on its top edge and, inside, the
+  conclusion of its statement typeset as a formula. A definition shows the opening
+  of its docstring instead; a declaration with neither shows its name only. Hover a
+  node for the full statement, hypotheses included. **nodes as** switches to
+  compact name-only boxes.
 - Dependencies are on the left, dependents on the right. Arrows point from a
   declaration to what it depends on. Click a node to focus on it; the browser's
   back and forward buttons walk through what you visited.
@@ -47,7 +52,7 @@ about SQLite; add `--disable-warning=ExperimentalWarning` to hide it.
   neighbours the filters hid.
 - **theorems only** keeps just the theorems and lemmas around the focus and hides
   definitions, structures, instances and the rest. The focus itself is always shown.
-- **depth** shows 1–3 steps away. Each level shows the top 25/50/100
+- **depth** shows 1–3 steps away. Each level shows the top 10/25/50/100
   declarations by PageRank; the column header says how many there are in total.
 - The side panel shows the focused declaration's Lean statement; a
   panel below the graph shows its proof (or, for a definition, its body). The code
@@ -55,11 +60,12 @@ about SQLite; add `--disable-warning=ExperimentalWarning` to hide it.
   is underlined: click it to focus on that dependency, or hover it to pick out its
   node in the graph. Dependencies named in the code are always drawn, listed first,
   in addition to the top-ranked ones.
-  The server reads them from the source file on Mathlib's `master` branch on
-  GitHub (so this part needs internet access), and the "Source file" link opens
-  that line. Master is newer than the snapshot: moved files are followed through
-  their deprecation shims, and declarations Lean generates automatically have
-  no statement to show.
+  Statements are read from the clone of Mathlib's `master` branch that `build.js`
+  makes in `data/mathlib4` (delete that folder and build again to refresh it), so
+  no internet access is needed while browsing; the "Source file" link opens that
+  line on GitHub. Master is newer than the snapshot: moved files are followed
+  through their deprecation shims, and declarations Lean generates automatically
+  have no statement to show (about a quarter of them).
 - A band above the graph shows the declaration's docstring and its statement typeset as mathematics, with a
   "Copy LaTeX" button. This is a rule-based conversion that stays close to Lean's
   wording (hypotheses listed, then the conclusion); it is typeset with KaTeX,
