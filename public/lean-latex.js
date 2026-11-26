@@ -16,6 +16,18 @@
   const CLOSERS = new Set(Object.values(CLOSER));
   // Longest first: tokens that must not be split.
   const MULTI = ['ℝ≥0∞', 'ℝ≥0', 'ℚ≥0', 'Type*', 'Sort*', "⁻¹'", '⁻¹', "''", '-ᵥ', '+ᵥ', '<->', ':=', '=>', '->', '<=', '>=', '..'];
+  // Mathlib's arrows for maps that respect a structure. Each is one sign; some take the
+  // scalars in square brackets, `M →ₗ[R] N`. `iso` marks the two-way versions.
+  const MAPS = {
+    '→ₗᵢ': ['linear isometry', true], '≃ₗᵢ': ['linear isometry', true, true], '→ₛₗ': ['semilinear', true], '≃ₛₗ': ['semilinear', true, true],
+    '→ₗ': ['linear', true], '≃ₗ': ['linear', true, true], '→ₐ': ['algebra', true], '≃ₐ': ['algebra', true, true],
+    '→L': ['linear, continuous', true], '≃L': ['linear, continuous', true, true],
+    '→+*': ['ring'], '≃+*': ['ring', false, true], '→+': ['additive'], '≃+': ['additive', false, true],
+    '→*': ['group'], '≃*': ['group', false, true], '→o': ['monotone'], '≃o': ['order', false, true],
+    '→ᵇ': ['bounded, continuous'], '→₀': ['finite support'], '≃ᵐ': ['measurable', false, true], '≃ₜ': ['homeomorphism', false, true],
+    '≃ᵢ': ['isometry', false, true], '⥤': ['functor'],
+  };
+  const ARROW = new RegExp('^(?:' + Object.keys(MAPS).sort((a, b) => b.length - a.length).map((k) => k.replace(/[+*]/g, '\\$&')).join('|') + ')');
   const SUPER = { '⁰': '0', '¹': '1', '²': '2', '³': '3', '⁴': '4', '⁵': '5', '⁶': '6', '⁷': '7', '⁸': '8', '⁹': '9', 'ⁿ': 'n', '⁺': '+', '⁻': '-' };
   const BIGOPS = { '∑': '\\sum', '∏': '\\prod', '⋃': '\\bigcup', '⋂': '\\bigcap', '⨆': '\\bigsqcup', '⨅': '\\mathop{\\sqcap}' };
   // Symbols that stand for a value (an operand)…
@@ -26,7 +38,7 @@
   };
   // …and symbols that sit between or before operands.
   const OPS = {
-    '→': '\\to', '->': '\\to', '↔': '\\iff', '<->': '\\iff', '↦': '\\mapsto', '=>': '\\mapsto',
+    '→': '\\to', '->': '\\to', '↪': '\\hookrightarrow', '≃': '\\simeq', '⟦': '[\\![', '⟧': ']\\!]', '↔': '\\iff', '<->': '\\iff', '↦': '\\mapsto', '=>': '\\mapsto',
     '∀': '\\forall', '∃': '\\exists', '¬': '\\neg', '∧': '\\land', '∨': '\\lor',
     '≤': '\\le', '<=': '\\le', '≥': '\\ge', '>=': '\\ge', '≠': '\\ne', '≡': '\\equiv', '≈': '\\approx', '≃': '\\simeq', '≅': '\\cong', '∼': '\\sim',
     '∈': '\\in', '∉': '\\notin', '⊆': '\\subseteq', '⊂': '\\subset', '⊇': '\\supseteq', '⊃': '\\supset',
@@ -78,6 +90,8 @@
   };
   // The same for spaces built from something: `ZMod n` is ℤ/nℤ.
   const SPACES_OF = {
+    Set: [1, (a) => `\\mathcal{P}\\left(${a}\\right)`], Finset: [1, (a) => `\\mathcal{P}_{\\mathrm{fin}}\\left(${a}\\right)`],
+    Polynomial: [1, (r) => `${r}[X]`],
     ZMod: [1, (n) => `\\mathbb{Z}/${n}\\mathbb{Z}`], AddCircle: [1, (t) => `\\mathbb{R}/${t}\\mathbb{Z}`],
     Padic: [1, (p) => `\\mathbb{Q}_{${p}}`], PadicInt: [1, (p) => `\\mathbb{Z}_{${p}}`],
     'Equiv.Perm': [1, (a) => `\\operatorname{Sym}\\left(${a}\\right)`],
@@ -118,6 +132,8 @@
       for (const m of MULTI) {
         if (src.startsWith(m, i)) { out.push({ t: 'sym', v: m }); i += m.length; continue scan; }
       }
+      const arrow = ARROW.exec(src.slice(i, i + 4));
+      if (arrow) { out.push({ t: 'sym', v: arrow[0] }); i += arrow[0].length; continue; }
       NUMBER.lastIndex = i;
       let m = NUMBER.exec(src);
       if (m) { out.push({ t: 'num', v: m[0] }); i += m[0].length; continue; }
@@ -192,7 +208,7 @@
 
   // `x : T` reads "x in T" when T is a collection of values: not a function type, not a universe.
   const isUniverse = (n) => n && ((n.t === 'id' && /^(Type|Sort|Prop)$/.test(n.v)) || n.v === 'Type*' || n.v === 'Sort*');
-  const isArrow = (n) => n.t === 'sym' && (n.v === '→' || n.v === '->');
+  const isArrow = (n) => n.t === 'sym' && (n.v === '→' || n.v === '->' || n.v === '↪' || n.v === '≃' || Object.hasOwn(MAPS, n.v));
   const isComma = (n) => n.t === 'sym' && n.v === ',';
   const memberOf = (typeItems) => typeItems.length > 0 && !typeItems.some(isArrow) && !isUniverse(typeItems[0]);
 
@@ -460,7 +476,10 @@
     };
     for (let i = 0; i < items.length; i++) {
       const node = items[i];
-      if (node.t === 'group' && node.open === '↑') {
+      if (node.t === 'group' && node.open === '[' && node.items.length === 1 && node.items[0].t === 'id' && node.items[0].v === 'X' && out.length && out[out.length - 1].atom) {
+        out[out.length - 1].s += '[X]'; // the polynomial ring over what stands before
+        out[out.length - 1].bare = undefined;
+      } else if (node.t === 'group' && node.open === '↑') {
         const said = iota('', node.items[0]);
         if (eraseCasts) atom(`\\left(${inner(node.items[0])}\\right)`);
         else atom(`${said}\\left(${inner(node.items[0])}\\right)`); // `↑x` with no type written
@@ -535,6 +554,12 @@
         }
         else if ((v === "''" || v === "⁻¹'") && (used = image(i, v === "''" ? '' : '^{-1}'))) i = used;
         else if (v === '⁻¹' || v === "⁻¹'") postfix('^{-1}'); // inverse; a preimage sign with nothing after it
+        else if (Object.hasOwn(MAPS, v)) {
+          const [label, scalars, iso] = MAPS[v];
+          const over = scalars && items[i + 1]?.t === 'group' && items[i + 1].open === '[' ? render(items[++i].items) : '';
+          const what = over ? `${over}\\text{-${label}}` : `\\text{${label}}`;
+          op(iso ? `\\xrightarrow[${what}]{\\sim}` : `\\xrightarrow{${what}}`);
+        }
         else if (v === 'ᶜ') postfix('^{c}');
         else if (v === 'ˣ') postfix('^{\\times}'); // the group of units
         else if ((v === 'ℚ' || v === 'ℤ') && isSym(items[i + 1], '_') && items[i + 2]?.t === 'group' && items[i + 2].open === '[') {

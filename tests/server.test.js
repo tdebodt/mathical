@@ -268,8 +268,13 @@ test('with Lean: what a theorem rests on, and whether it holds by definition', a
     // Thm's proof uses the theorems A and B, and the definition Hub, which is not a fact
     assert.deepEqual(await (await post({ names: ['Thm', 'A', 'Hub', 'NotANode'] })).json(), {
       state: 'ready',
-      roles: { Thm: { byDefinition: false, facts: ['A', 'B'] }, A: { byDefinition: true, facts: null } },
+      roles: { Thm: { byDefinition: false, facts: ['A', 'B'], main: null }, A: { byDefinition: true, facts: null, main: null } },
     });
+    // a proof resting on one result: how widely used that result is, whether it has an argument of
+    // its own (how many facts it rests on), and whether this theorem merely says the same thing again
+    const single = (await (await post({ names: ['Core', 'UsesRing'] })).json()).roles;
+    assert.deepEqual(single.Core, { byDefinition: null, facts: ['Thm'], main: { name: 'Thm', uses: 1, facts: 2, same: false } });
+    assert.deepEqual(single.UsesRing.main, { name: 'Thm', uses: 1, facts: 2, same: true });
     assert.equal((await post({})).status, 400);
   } finally {
     await new Promise((r) => s.close(r));

@@ -4,6 +4,7 @@ const path = require('node:path');
 const { open, search, neighborhood, facts } = require('./lib/graphdb');
 const { locate, localSource, modulePath } = require('./lib/leansource');
 const { LeanStatements } = require('./lib/lean');
+const { toLatex } = require('./public/lean-latex.js');
 
 const GITHUB = 'https://github.com/leanprover-community/mathlib4/blob/master/';
 const RAW = 'https://raw.githubusercontent.com/leanprover-community/mathlib4/master/';
@@ -123,7 +124,31 @@ function createServer(dbPath, { fetchSource = fetchFromGitHub, lean = null } = {
       roles[name] = {
         byDefinition: byRfl[name] ? byRfl[name].rfl : null,
         facts: used[name] ? facts(db, used[name].proof.filter((n) => n !== name)) : null,
+        main: null,
       };
+    }
+    // A proof that rests on one result: is it a corollary of it, or the same statement again?
+    // That depends on the result: how widely it is used, whether it has an argument of its
+    // own, and whether the two statements read the same.
+    const single = Object.entries(roles).filter(([, r]) => r.facts && r.facts.length === 1);
+    if (single.length) {
+      const mains = [...new Set(single.map(([, r]) => r.facts[0]))];
+      const [mainUses, texts] = await Promise.all([
+        lean.uses(mains),
+        lean.statements([...new Set([...mains, ...single.map(([name]) => name)])].map((name) => ({ name, kind: 'theorem' }))),
+      ]);
+      const degree = db.prepare('SELECT in_degree FROM nodes WHERE name = ?');
+      const said = (name) => { const tex = texts[name] ? toLatex(texts[name], name, '') : null; return tex ? tex.thesis : null; };
+      for (const [name, role] of single) {
+        const main = role.facts[0];
+        const row = degree.get(main);
+        role.main = {
+          name: main,
+          uses: row ? row.in_degree : null,
+          facts: mainUses[main] ? facts(db, mainUses[main].proof.filter((n) => n !== main)).length : null,
+          same: said(name) !== null && said(name) === said(main),
+        };
+      }
     }
     return { state: lean.state, roles };
   };

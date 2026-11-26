@@ -5,12 +5,16 @@ const KNOWN = {
   Thm: 'Thm {α : Type u_1} [Field α] (x : α) (h : x ≠ 0) : x / x = 1',
   'Real.continuousOn_cos': 'Real.continuousOn_cos {s : Set ℝ} : ContinuousOn Real.cos s',
   Hub: 'Hub {α : Type u_1} [Field α] (x : α) : α',
+  UsesRing: 'UsesRing {α : Type u_1} [Field α] (x : α) (h : x ≠ 0) : x / x = 1',
+  Core: 'Core (n : ℕ) : n = n',
 };
 
 const USES = {
   Thm: { statement: ['Hub'], proof: ['A', 'Hub', 'B'] },
   L1: { statement: ['Hub'], proof: [] },
   L2: { statement: [], proof: ['Hub'] },
+  Core: { statement: [], proof: ['Thm', 'Hub'] },
+  UsesRing: { statement: [], proof: ['Thm'] },
 };
 
 const mode = process.argv[2] || 'ok';

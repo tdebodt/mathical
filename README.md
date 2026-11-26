@@ -51,7 +51,9 @@ gets its statements in a fraction of a second. The top bar shows "Lean: ready".
   tests that use no naming convention and so apply to any Lean project. **cast rule**:
   with the canonical maps erased, both sides say the same thing (`ι(r/s) = ι(r)/ι(s)`).
   **by definition**: Lean proves it by unfolding definitions. **corollary**: its proof
-  rests on a single other result. **hide bookkeeping** hides the first two kinds.
+  rests on a single other result, one that is specific and has an argument of its own.
+  **restates**: it says the same as the one result it rests on. **hide bookkeeping**
+  hides the first two kinds.
 - Without Lean, nothing else changes: statements come from the source text.
 
 ## Using it

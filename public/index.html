@@ -93,9 +93,8 @@
   #stage.dragging { cursor: grabbing; }
   #boxes { position: absolute; left: 0; top: 0; width: 0; height: 0; transform-origin: 0 0; pointer-events: none; }
   .zoom { position: absolute; right: 12px; bottom: 12px; display: flex; gap: 4px; }
-  .legend { position: absolute; left: 12px; bottom: 12px; display: flex; flex-wrap: wrap; gap: 4px 12px; max-width: 70%;
-            padding: 6px 10px; font-size: 12px; color: var(--muted); background: var(--surface);
-            border: 1px solid var(--line); border-radius: 8px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 5px 12px; margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--line);
+            font-size: 12px; color: var(--muted); }
   .legend span { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
   #message { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; padding: 24px;
              color: var(--muted); pointer-events: none; }
@@ -250,7 +249,6 @@
     <div id="boxes"></div>
     <div id="tip" hidden></div>
     <div id="message" hidden><div></div></div>
-    <div class="legend" id="legend"></div>
     <div class="zoom">
       <button type="button" id="zout" aria-label="Zoom out">−</button>
       <button type="button" id="zin" aria-label="Zoom in">+</button>
@@ -271,7 +269,10 @@
     <div id="proof-outline" tabindex="0" hidden></div>
     <pre tabindex="0"><code id="proof-code"></code></pre>
   </section>
-  <aside id="panel" aria-live="polite"></aside>
+  <aside>
+    <div id="panel" aria-live="polite"></div>
+    <div class="legend" id="legend" aria-label="Legend"></div>
+  </aside>
 </main>
 <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" crossorigin="anonymous"></script>
 <script src="/lean.js"></script>
@@ -384,11 +385,14 @@ function zoomAt(px, py, factor) {
   cam.k = k;
   applyCam();
 }
-function fit() {
+// `whole` fits the entire graph in view, however small that makes it (the Fit button).
+// Otherwise the text stays readable, and a graph too wide for that is centred on the focus:
+// the outer columns are a drag or a scroll away.
+function fit(whole) {
   if (!bbox) return;
   const { width: W, height: H } = svg.getBoundingClientRect();
   const bw = bbox.x1 - bbox.x0 + 60, bh = bbox.y1 - bbox.y0 + 60;
-  cam.k = Math.min(1, Math.max(0.5, W / bw));
+  cam.k = whole === true ? Math.min(1, Math.max(0.2, Math.min(W / bw, H / bh))) : Math.min(1, Math.max(0.85, W / bw));
   cam.x = bw * cam.k <= W ? (W - (bbox.x0 + bbox.x1) * cam.k) / 2 : W / 2; // else centre the focus column
   cam.y = bh * cam.k <= H ? (H - (bbox.y0 + bbox.y1) * cam.k) / 2 : 24 - bbox.y0 * cam.k;
   applyCam();
@@ -422,7 +426,8 @@ stage.addEventListener('wheel', (e) => {
 const zoomCentre = (f) => { const r = svg.getBoundingClientRect(); zoomAt(r.width / 2, r.height / 2, f); };
 $('zin').onclick = () => zoomCentre(1.25);
 $('zout').onclick = () => zoomCentre(0.8);
-$('zfit').onclick = fit;
+$('zfit').onclick = () => fit(true);
+$('zfit').title = 'Show the whole graph';
 
 // ---------- drawing ----------
 function showMessage(...content) {
@@ -726,7 +731,7 @@ function spotlight(name, on) {
   if (!on || !g) return;
   g.classList.add('pick');
   for (const p of g.edgeEls || []) if (p.ends.includes(focusNode)) p.classList.add('pick');
-  const box = svg.getBoundingClientRect(), r = g.getBoundingClientRect(), pad = 24, below = 70; // clear of the legend
+  const box = svg.getBoundingClientRect(), r = g.getBoundingClientRect(), pad = 24, below = 24;
   let dx = 0, dy = 0;
   if (r.left < box.left + pad) dx = box.left + pad - r.left;
   else if (r.right > box.right - pad) dx = box.right - pad - r.right;
@@ -1046,7 +1051,12 @@ function roleOf(n) {
   const lean = n.role; // from Lean, when it has answered
   if (!lean) return null;
   if (lean.byDefinition) return { tag: 'by definition', why: 'Lean accepts this by unfolding definitions; its proof is reflexivity.' };
-  if (lean.facts && lean.facts.length === 1) return { tag: 'corollary', why: `Its proof rests on one result: ${lean.facts[0]}.`, of: lean.facts[0] };
+  // Resting on one result is not enough to be its corollary: the result must have an argument
+  // of its own (not be a definition in disguise) and be specific (not `le_trans`).
+  const main = lean.main;
+  if (main && main.same) return { tag: 'restates', why: `Says the same as ${main.name}, under another name.`, of: main.name };
+  if (main && main.facts !== null && main.facts >= 2 && main.uses !== null && main.uses <= 200)
+    return { tag: 'corollary', why: `Its proof rests on one result, ${main.name}, which has an argument of its own.`, of: main.name };
   if (lean.facts && lean.facts.length === 0) return { tag: 'direct', why: 'Its proof uses no other theorem of the library: definitions and logic only.' };
   return null;
 }

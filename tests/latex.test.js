@@ -130,9 +130,9 @@ test('chains: not merged when that would change or blur the meaning', () => {
 test('a variable of type `Set α` is a subset of α', () => {
   const lets = (stmt) => toLatex(stmt, 'n').parts.filter((p) => p.math && !p.display).map((p) => p.math);
   assert.deepEqual(lets('theorem t (s t : Set α) (u : Set (α × β)) (v : Set.Icc a b) (F : Set α → Prop) : True'), [
-    's, t \\subseteq \\alpha', 'u \\subseteq \\alpha \\times \\beta', 'v \\in \\left[a, b\\right]', 'F : \\mathrm{Set}\\,\\alpha \\to \\mathrm{Prop}',
+    's, t \\subseteq \\alpha', 'u \\subseteq \\alpha \\times \\beta', 'v \\in \\left[a, b\\right]', 'F : \\mathcal{P}\\left(\\alpha\\right) \\to \\mathrm{Prop}',
   ]);
-  assert.equal(expr('∀ s : Set α, ∃ t : Set (Set α), s ∈ t'), '\\forall s \\subseteq \\alpha,\\; \\exists t \\subseteq \\mathrm{Set}\\,\\alpha,\\; s \\in t');
+  assert.equal(expr('∀ s : Set α, ∃ t : Set (Set α), s ∈ t'), '\\forall s \\subseteq \\alpha,\\; \\exists t \\subseteq \\mathcal{P}\\left(\\alpha\\right),\\; s \\in t');
   assert.equal(expr('∀ (s : Set ℝ) (x : ℝ), x ∈ s'), '\\forall \\left(s \\subseteq \\mathbb{R}\\right)\\,\\left(x \\in \\mathbb{R}\\right),\\; x \\in s');
 });
 
@@ -382,7 +382,7 @@ test('definitions: the thesis is the signature, what the thing is, not how it is
   assert.equal(thesis('noncomputable def arg (x : ℂ) : ℝ', 'Complex.arg'), '\\arg : \\mathbb{C} \\to \\mathbb{R}');
   assert.equal(thesis('def angle (x y : V) : ℝ', 'InnerProductGeometry.angle'), '\\mathrm{angle} : V \\times V \\to \\mathbb{R}');
   assert.equal(thesis('def image {α β : Type*} (f : α → β) (s : Set α) : Set β', 'Set.image'),
-    '\\mathrm{image} : \\left(\\alpha \\to \\beta\\right) \\times \\mathrm{Set}\\,\\alpha \\to \\mathrm{Set}\\,\\beta');
+    '\\mathrm{image} : \\left(\\alpha \\to \\beta\\right) \\times \\mathcal{P}\\left(\\alpha\\right) \\to \\mathcal{P}\\left(\\beta\\right)');
   assert.equal(thesis('def Prime (p : ℕ) : Prop', 'Nat.Prime'), '\\mathrm{Prime} : \\mathbb{N} \\to \\mathrm{Prop}');
   assert.equal(thesis('noncomputable def pi : ℝ', 'Real.pi'), '\\pi \\in \\mathbb{R}');
   // a later argument whose type mentions an earlier one cannot be written as a product
@@ -452,7 +452,7 @@ test('abbreviations: a shorthand is shown as what it stands for', () => {
   const abbrev = (stmt, body, name = 'n', ctx) => toLatex(stmt, name, ctx, { body });
   const r = abbrev('abbrev ConstructibleSetData', ':= Finset (BasicConstructibleSetData R)', 'PrimeSpectrum.ConstructibleSetData');
   assert.equal(r.kind, 'Abbreviation');
-  assert.equal(r.thesis, '\\mathrm{ConstructibleSetData} := \\mathrm{Finset}\\,\\left(\\mathrm{BasicConstructibleSetData}\\,R\\right)');
+  assert.equal(r.thesis, '\\mathrm{ConstructibleSetData} := \\mathcal{P}_{\\mathrm{fin}}\\left(\\mathrm{BasicConstructibleSetData}\\,R\\right)');
   assert.equal(r.parts.at(-1).math, r.thesis);
   const withArgs = abbrev('abbrev Short {α : Type*} (x : α) : α', ':= Hub x');
   assert.equal(withArgs.thesis, '\\mathrm{Short}\\,x := \\mathrm{Hub}\\,x');
@@ -725,4 +725,39 @@ test('castRule: a statement with content is not one, cast or no cast', () => {
   assert.equal(castRule('theorem t (n : ℕ) : (↑n : ℝ) < (↑n : ℝ) + 1', 't', ''), false);
   assert.equal(castRule('def f (n : ℕ) : ℝ', 'f', ''), false);
   assert.equal(castRule('structure S where', 'S', ''), false);
+});
+
+test('structured maps: a decorated arrow says what kind of map', () => {
+  assert.equal(expr('f : M →ₗ[R] N'), 'f : M \\xrightarrow{R\\text{-linear}} N');
+  assert.equal(expr('e : M ≃ₗ[R] N'), 'e : M \\xrightarrow[R\\text{-linear}]{\\sim} N');
+  assert.equal(expr('f : R →+* S'), 'f : R \\xrightarrow{\\text{ring}} S');
+  assert.equal(expr('f : G →* H'), 'f : G \\xrightarrow{\\text{group}} H');
+  assert.equal(expr('f : A →+ B'), 'f : A \\xrightarrow{\\text{additive}} B');
+  assert.equal(expr('f : E →L[𝕜] F'), 'f : E \\xrightarrow{\\Bbbk\\text{-linear, continuous}} F');
+  assert.equal(expr('f : A →ₐ[R] B'), 'f : A \\xrightarrow{R\\text{-algebra}} B');
+  assert.equal(expr('e : R ≃+* S'), 'e : R \\xrightarrow[\\text{ring}]{\\sim} S');
+  assert.equal(expr('f : α →o β'), 'f : \\alpha \\xrightarrow{\\text{monotone}} \\beta');
+  assert.equal(expr('f : α ↪ β'), 'f : \\alpha \\hookrightarrow \\beta');
+  assert.equal(expr('e : α ≃ β'), 'e : \\alpha \\simeq \\beta');
+  assert.equal(expr('F : C ⥤ D'), 'F : C \\xrightarrow{\\text{functor}} D');
+  assert.equal(expr('f : α →₀ M'), 'f : \\alpha \\xrightarrow{\\text{finite support}} M');
+});
+
+test('structured maps: a variable of such a type is a map, written with a colon', () => {
+  assert.equal(prose('theorem t (f : M →ₗ[R] N) (e : R ≃+* S) (x : M) : f x = f x'),
+    'Let $f : M \\xrightarrow{R\\text{-linear}} N$, $e : R \\xrightarrow[\\text{ring}]{\\sim} S$, $x \\in M$. Then');
+  assert.equal(expr('a → b'), 'a \\to b'); // the plain arrow is untouched
+  assert.equal(expr('a →+ b + c'), 'a \\xrightarrow{\\text{additive}} b + c');
+});
+
+test('more spaces: power set, finite subsets, polynomials, power series', () => {
+  assert.equal(expr('S : Set (Set α)'), 'S : \\mathcal{P}\\left(\\mathcal{P}\\left(\\alpha\\right)\\right)');
+  assert.equal(expr('s : Finset ℕ'), 's : \\mathcal{P}_{\\mathrm{fin}}\\left(\\mathbb{N}\\right)');
+  assert.equal(expr('p : R[X]'), 'p : R[X]');
+  assert.equal(expr('p : Polynomial R'), 'p : R[X]');
+  assert.equal(expr('p : (ZMod n)[X]'), 'p : \\left(\\mathbb{Z}/n\\mathbb{Z}\\right)[X]');
+  assert.equal(expr('f : R⟦X⟧'), 'f : R [\\![ X ]\\!]');
+  assert.equal(expr('l[i]'), 'l\\,\\left[i\\right]'); // indexing is not a polynomial ring
+  // as a binder, a set is still "a subset of"
+  assert.equal(prose('theorem t (s : Set α) (t : Finset α) : s = s'), 'Let $s \\subseteq \\alpha$, $t \\in \\mathcal{P}_{\\mathrm{fin}}\\left(\\alpha\\right)$. Then');
 });
