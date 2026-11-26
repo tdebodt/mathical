@@ -190,3 +190,41 @@ test('theorems=1 keeps only theorems', async () => {
   const res = await fetch(base + '/api/node', { method: 'POST', body: JSON.stringify({ name: 'Thm', theorems: true }) });
   assert.deepEqual((await res.json()).out.nodes.map((n) => n.name), ['A', 'B']);
 });
+
+test('with Lean: elaborated statements are fetched on demand, then come with the nodes', async () => {
+  const fs = require('node:fs'), os = require('node:os'), path = require('node:path');
+  const { LeanStatements } = require('../lib/lean');
+  const cachePath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'mathical-srv-lean-')), 'cache.db');
+  const lean = new LeanStatements({ cachePath, command: process.execPath, args: [path.join(__dirname, 'fixtures', 'fake-lean.js')] });
+  const s = createServer(dbPathForSource, { lean });
+  await new Promise((r) => s.listen(0, '127.0.0.1', r));
+  const at = `http://127.0.0.1:${s.address().port}`;
+  const json = async (p, init) => (await fetch(at + p, init)).json();
+  try {
+    assert.equal((await json('/api/node?name=Thm')).focus.lean, undefined); // nothing known yet
+    const got = await json('/api/elaborate', { method: 'POST', body: JSON.stringify({ names: ['Thm', 'Hub', 'A', 'NotANode'] }) });
+    assert.equal(got.state, 'ready');
+    assert.deepEqual(got.statements, {
+      Thm: 'theorem Thm {α : Type u_1} [Field α] (x : α) (h : x ≠ 0) : x / x = 1',
+      Hub: 'def Hub {α : Type u_1} [Field α] (x : α) : α',
+    });
+    // from now on the node rows carry it
+    const node = await json('/api/node?name=Thm&explicit=0');
+    assert.equal(node.focus.lean, got.statements.Thm);
+    assert.equal(node.out.nodes.find((n) => n.name === 'Hub').lean, got.statements.Hub);
+    assert.equal(node.out.nodes.find((n) => n.name === 'A').lean, undefined);
+    assert.equal((await json('/api/search?q=Hub'))[0].lean, got.statements.Hub);
+    assert.deepEqual(await json('/api/lean'), { state: 'ready' });
+    assert.equal((await fetch(at + '/api/elaborate', { method: 'POST', body: '{"names":"Thm"}' })).status, 400);
+    assert.equal((await fetch(at + '/api/elaborate')).status, 405);
+  } finally {
+    await new Promise((r) => s.close(r));
+  }
+});
+
+test('without Lean: the elaborate endpoint answers empty and nodes are as before', async () => {
+  const got = await (await fetch(base + '/api/elaborate', { method: 'POST', body: JSON.stringify({ names: ['Thm'] }) })).json();
+  assert.deepEqual(got, { state: 'off', statements: {} });
+  assert.deepEqual(await (await fetch(base + '/api/lean')).json(), { state: 'off' });
+  assert.equal('lean' in (await get('/api/node?name=Thm')).body.focus, false);
+});

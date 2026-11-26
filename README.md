@@ -20,6 +20,31 @@ node server.js    # then open http://127.0.0.1:5173/
 `PORT=8080 node server.js` uses another port. Node prints an "ExperimentalWarning"
 about SQLite; add `--disable-warning=ExperimentalWarning` to hide it.
 
+## Optional: statements from Lean itself
+
+The source text leaves out what Lean infers. `theorem continuousOn_cos {s} :
+ContinuousOn cos s` does not say that `s` is a set of real numbers; Lean works that
+out. With Lean set up, the server asks it for each declaration's full statement the
+first time that declaration is on screen, and remembers the answer.
+
+```sh
+curl -sSf https://elan.lean-lang.org/elan-init.sh | sh -s -- -y --no-modify-path --default-toolchain none
+cd data/mathlib4 && ~/.elan/bin/lake exe cache get    # precompiled Mathlib, no compiling
+```
+
+That takes about 10.6 GB on disk (3.3 GB of Lean toolchain in `~/.elan`, 7.3 GB of
+compiled Mathlib in `data/mathlib4/.lake`) and a few minutes to download. After it,
+`node server.js` starts Lean in the background: loading Mathlib takes about 25
+seconds, during which the page works from the source text; a view of new nodes then
+gets its statements in a fraction of a second. The top bar shows "Lean: ready".
+
+- The Lean program is `lean/Signatures.lean`; `lib/lean.js` runs it and keeps its
+  answers in `data/lean-cache.v2.db`, which survives `node build.js`.
+- It covers declarations the source never writes out (the ones Lean generates), and
+  switches on Mathlib's common scoped notations so that statements print as their
+  authors wrote them.
+- Without Lean, nothing else changes: statements come from the source text.
+
 ## Using it
 
 - Search by name (`/` focuses the search box), or open a link such as
@@ -133,6 +158,8 @@ node --disable-warning=ExperimentalWarning --test
 | `lib/csv.js` | CSV reader |
 | `lib/graphdb.js` | Database build, name search, neighbourhood query |
 | `lib/reach.js` | Counts each declaration's direct and indirect dependents |
+| `lib/lean.js` | Runs Lean, asks it for statements, remembers the answers |
+| `lean/Signatures.lean` | The Lean program that prints a declaration's full statement |
 | `server.js` | `/api/search`, `/api/node`, and the page |
 | `public/index.html` | The whole interface |
 | `public/lean.js` | Lean syntax colouring and dependency links |

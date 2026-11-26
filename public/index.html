@@ -51,6 +51,7 @@
   #results .none { color: var(--muted); cursor: default; }
   .dot { flex: none; width: 9px; height: 9px; border-radius: 50%; display: inline-block; background: var(--k-unknown); }
   .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; color: var(--muted); font-size: 13px; }
+  .leanstate { font-size: 12px; color: var(--muted); white-space: nowrap; }
   .controls label, .controls .group { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
   .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
   .seg button { border: 0; border-right: 1px solid var(--line); border-radius: 0; }
@@ -206,6 +207,7 @@
         <option value="direct">direct uses</option>
         <option value="pagerank">PageRank</option>
       </select></label>
+    <span id="leanstate" class="leanstate"></span>
     <label title="Conventions for the typeset statement: French / Belgian writes the angle ABC under a hat, open intervals as ]a, b[, and slanted ≤ ≥">notation
       <select id="notation"><option value="intl">International</option><option value="fr">French / Belgian</option></select></label>
   </div>
@@ -416,13 +418,21 @@ function nodeStyle() {
   try { return localStorage.getItem('nodeStyle') === 'names' ? 'names' : 'formulas'; } catch { return 'formulas'; }
 }
 
+// The statement to typeset for a declaration: Lean's own, with every type filled in, once it
+// is known; until then, or without Lean, the text of the source with its `variable` context.
+const stated = (n) => (n.lean ? { statement: n.lean, context: '' } : { statement: n.statement, context: n.context });
+
 // What a node says under its name: the conclusion of its statement, typeset; for a definition,
 // its signature; failing that, the opening of its docstring; nothing when the source has
 // none of these (or in the names-only view).
 function nodeBody(n) {
   if (nodeStyle() === 'names') return null;
-  if (n.statement && window.LeanLatex && window.katex) {
-    const tex = LeanLatex.toLatex(n.statement, n.name, n.context, { notation: notation(), body: n.body });
+  // A declaration the source never writes, of the kind Lean generates for a structure, is
+  // better said in words ("every ring is a semiring") than by its bare signature.
+  const generated = !n.statement && (n.kind === 'abbrev' || n.kind === 'definition') && window.LeanPhrases ? LeanPhrases.projection(n.name, n.parent) : null;
+  const { statement, context } = stated(n);
+  if (!generated && statement && window.LeanLatex && window.katex) {
+    const tex = LeanLatex.toLatex(statement, n.name, context, { notation: notation(), body: n.body });
     if (tex && tex.thesis) {
       try {
         const body = h('div', { className: 'nbody' });
@@ -432,9 +442,9 @@ function nodeBody(n) {
     }
   }
   // Declarations Lean generates have no statement: say what their name tells.
-  if (!n.statement && window.LeanPhrases) {
-    const said = LeanPhrases.projection(n.name, n.parent);
-    if (said) {
+  if (generated) {
+    const said = generated;
+    {
       const body = h('div', { className: 'nbody' + (said.tex ? '' : ' words') });
       if (said.tex && window.katex) {
         try { katex.render(said.tex, body, { displayMode: false, throwOnError: true, strict: false }); } catch { body.textContent = ''; }
@@ -457,7 +467,8 @@ let tipFor = null;
 // The card for a declaration: its docstring, then its full statement. `anchor` is what the
 // pointer is on: the node itself, or the declaration's name in the proof or statement text.
 function showTip(n, anchor) {
-  const full = n.statement ? renderMath(n.statement, n.name, n.context, n.body) : null;
+  const { statement, context } = stated(n);
+  const full = statement ? renderMath(statement, n.name, context, n.body) : null;
   if (!full && !n.doc) return hideTip();
   tipFor = anchor;
   const tip = $('tip');
@@ -732,7 +743,7 @@ async function pinNamed(f, seq) {
     });
     if (!res.ok) return;
     const data = await res.json();
-    if (seq === loadSeq) draw(data, state);
+    if (seq === loadSeq) { draw(data, state); elaborate(seq); } // the nodes just added need their statements too
   } catch { /* the graph without the extra nodes is still correct */ }
 }
 
@@ -786,7 +797,8 @@ let band = null; // { r: the source lookup, f: the focused node } for the declar
 function drawBand() {
   if (!band) return showTheorem(null);
   const { r, f } = band;
-  const math = renderMath(r.statement, f.name, r.context, /(^|\s)abbrev\s/.test(r.statement) ? r.body : undefined);
+  const text = f.lean ? { statement: f.lean, context: '' } : { statement: r.statement, context: r.context };
+  const math = text.statement ? renderMath(text.statement, f.name, text.context, /(^|\s)abbrev\s/.test(text.statement) ? r.body : undefined) : null;
   const doc = r.doc ? h('p', { className: 'doc' }, docText(r.doc)) : null;
   showTheorem(doc || math ? [h('div', { className: 'main' }, ...[doc, math && math[0]].filter(Boolean)), ...(math ? [math[1]] : [])] : null);
 }
@@ -808,7 +820,7 @@ const WHY_NOT = {
   fetch_failed: 'Couldn’t download the source file from GitHub.',
 };
 async function loadStatement(f, box, srcLink) {
-  if (!sourceUrl(f.file_module)) { band = null; showTheorem(null); return showProof(null); } // Lean core: the dataset has no source file
+  if (!sourceUrl(f.file_module)) { band = { r: {}, f }; drawBand(); return showProof(null); } // Lean core: no source file, but Lean may know the statement
   const seq = loadSeq;
   const note = (text) => h('p', { className: 'note', textContent: text });
   box.replaceChildren(h('h3', { textContent: 'Statement' }), note('Loading from GitHub…'));
@@ -826,7 +838,7 @@ async function loadStatement(f, box, srcLink) {
     if (srcLink) srcLink.href = r.url;
   } else kids.push(note(WHY_NOT[r.reason] || WHY_NOT.fetch_failed));
   box.replaceChildren(...kids);
-  band = r.found ? { r, f } : null;
+  band = { r: r.found ? r : {}, f }; // even without source text there may be Lean's statement
   drawBand();
   const done = () => pinNamed(f, seq);
   setTimeout(done, 0);
@@ -878,6 +890,41 @@ function drawPanel(data) {
   );
 }
 
+// ---------- Lean ----------
+// Asks the server, which asks Lean, for the elaborated statements of the declarations on
+// screen that do not have one yet, then redraws with them. Lean takes a while to load when
+// the server starts; the page works from the source text meanwhile.
+const LEAN_KINDS = new Set(['theorem', 'definition', 'abbrev', 'opaque', 'axiom']);
+const onScreen = (data) => [data.focus, ...data.out.nodes, ...data.in.nodes];
+function showLean(state) {
+  const label = { ready: 'Lean: ready', starting: 'Lean: loading Mathlib…', idle: 'Lean: idle', off: 'Lean: off' }[state] || '';
+  $('leanstate').textContent = label;
+  $('leanstate').title = state === 'off'
+    ? 'Statements are read from the source text. Types that Lean infers are missing.'
+    : 'Statements come from Lean itself, with every inferred type filled in.';
+}
+async function elaborate(seq) {
+  if (!lastDrawn) return;
+  const names = [...new Set(onScreen(lastDrawn.data).filter((n) => !n.lean && LEAN_KINDS.has(n.kind)).map((n) => n.name))];
+  if (!names.length) return;
+  let got;
+  try {
+    const res = await fetch('/api/elaborate', { method: 'POST', body: JSON.stringify({ names }) });
+    if (!res.ok) return;
+    got = await res.json();
+  } catch { return; }
+  showLean(got.state);
+  if (seq !== loadSeq || !lastDrawn) return;
+  let changed = false;
+  for (const n of onScreen(lastDrawn.data)) {
+    if (!n.lean && got.statements[n.name]) { n.lean = got.statements[n.name]; changed = true; }
+  }
+  if (!changed) return;
+  draw(lastDrawn.data, lastDrawn.state);
+  if (band && got.statements[band.f.name]) { band.f.lean = got.statements[band.f.name]; drawBand(); }
+}
+fetch('/api/lean').then((r) => r.json()).then((s) => showLean(s.state)).catch(() => {});
+
 // ---------- loading ----------
 let loadSeq = 0;
 async function load() {
@@ -925,6 +972,7 @@ async function load() {
   document.title = `${data.focus.name} — Mathlib graph navigator`;
   draw(data, state);
   drawPanel(data);
+  elaborate(seq);
 }
 window.addEventListener('hashchange', load);
 window.addEventListener('resize', relayout);

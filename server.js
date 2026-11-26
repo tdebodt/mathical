@@ -3,6 +3,7 @@ const http = require('node:http');
 const path = require('node:path');
 const { open, search, neighborhood } = require('./lib/graphdb');
 const { locate, localSource, modulePath } = require('./lib/leansource');
+const { LeanStatements } = require('./lib/lean');
 
 const GITHUB = 'https://github.com/leanprover-community/mathlib4/blob/master/';
 const RAW = 'https://raw.githubusercontent.com/leanprover-community/mathlib4/master/';
@@ -26,8 +27,31 @@ const STATIC = {
   '/lean-phrases.js': ['lean-phrases.js', 'text/javascript; charset=utf-8'],
 };
 
-function createServer(dbPath, { fetchSource = fetchFromGitHub } = {}) {
+// `lean`, when given, is a LeanStatements: the source of statements as Lean elaborates them.
+function createServer(dbPath, { fetchSource = fetchFromGitHub, lean = null } = {}) {
   const db = open(dbPath);
+
+  // Adds to each node row the elaborated statement already known for it, as `lean`.
+  const withLean = (rows) => {
+    if (!lean || !rows.length) return rows;
+    const known = lean.cached(rows.map((r) => r.name), Object.fromEntries(rows.map((r) => [r.name, r.kind])));
+    for (const row of rows) if (known[row.name]) row.lean = known[row.name];
+    return rows;
+  };
+  const answer = (result) => {
+    if (result) withLean([result.focus, ...result.out.nodes, ...result.in.nodes]);
+    return result;
+  };
+  // Elaborated statements for `names`, asking Lean for the ones not yet known.
+  const elaborate = async (names) => {
+    if (!lean) return { state: 'off', statements: {} };
+    const wanted = [...new Set(names.filter((n) => typeof n === 'string'))].slice(0, 400);
+    const decls = wanted.length
+      ? db.prepare(`SELECT name, kind FROM nodes WHERE name IN (${wanted.map(() => '?').join(',')})`).all(...wanted).map((r) => ({ ...r }))
+      : [];
+    const statements = await lean.statements(decls);
+    return { state: lean.state, statements };
+  };
   const files = new Map(); // file path -> promise of its text, most recently used last
 
   const sourceText = (filePath) => {
@@ -77,7 +101,7 @@ function createServer(dbPath, { fetchSource = fetchFromGitHub } = {}) {
       const params = new URLSearchParams(query);
 
       // POST /api/node takes the same options as the GET form in a JSON body, plus `pin`.
-      if (req.method === 'POST' && pathname === '/api/node') {
+      if (req.method === 'POST' && (pathname === '/api/node' || pathname === '/api/elaborate')) {
         const chunks = [];
         let size = 0;
         req.on('data', (chunk) => {
@@ -93,6 +117,10 @@ function createServer(dbPath, { fetchSource = fetchFromGitHub } = {}) {
             } catch {
               return json(res, 400, { error: 'body must be JSON' });
             }
+            if (pathname === '/api/elaborate') {
+              if (!body || !Array.isArray(body.names)) return json(res, 400, { error: 'names must be a list' });
+              return elaborate(body.names).then((out) => json(res, 200, out), (err) => { console.error(err); json(res, 500, { error: 'internal error' }); });
+            }
             if (!body || typeof body.name !== 'string' || !body.name) return json(res, 400, { error: 'name is required' });
             const result = neighborhood(db, body.name, {
               depth: body.depth ?? 1,
@@ -102,7 +130,7 @@ function createServer(dbPath, { fetchSource = fetchFromGitHub } = {}) {
               hidePlumbing: body.plumbing === false || body.plumbing === 0,
               theoremsOnly: body.theorems === true || body.theorems === 1,
             });
-            return result ? json(res, 200, result) : json(res, 404, { error: 'not found' });
+            return result ? json(res, 200, answer(result)) : json(res, 404, { error: 'not found' });
           } catch (err) {
             console.error(err);
             json(res, 500, { error: 'internal error' });
@@ -113,7 +141,7 @@ function createServer(dbPath, { fetchSource = fetchFromGitHub } = {}) {
       if (req.method !== 'GET' && req.method !== 'HEAD') return json(res, 405, { error: 'method not allowed' });
 
       if (pathname === '/api/search') {
-        return json(res, 200, search(db, params.get('q'), params.get('limit') ?? 20));
+        return json(res, 200, withLean(search(db, params.get('q'), params.get('limit') ?? 20)));
       }
       if (pathname === '/api/node') {
         const name = params.get('name');
@@ -125,8 +153,10 @@ function createServer(dbPath, { fetchSource = fetchFromGitHub } = {}) {
           hidePlumbing: params.get('plumbing') === '0',
           theoremsOnly: params.get('theorems') === '1',
         });
-        return result ? json(res, 200, result) : json(res, 404, { error: 'not found' });
+        return result ? json(res, 200, answer(result)) : json(res, 404, { error: 'not found' });
       }
+      if (pathname === '/api/lean') return json(res, 200, { state: lean ? lean.state : 'off' });
+      if (pathname === '/api/elaborate') return json(res, 405, { error: 'method not allowed' }); // POST only
       if (pathname === '/api/source') {
         const name = params.get('name');
         if (!name) return json(res, 400, { error: 'name is required' });
@@ -146,7 +176,7 @@ function createServer(dbPath, { fetchSource = fetchFromGitHub } = {}) {
       json(res, 500, { error: 'internal error' });
     }
   });
-  server.on('close', () => db.close());
+  server.on('close', () => { db.close(); if (lean) lean.close().catch(() => {}); });
   return server;
 }
 
@@ -162,7 +192,23 @@ if (require.main === module) {
   // Read Lean files from the local checkout that build.js makes; without one, from GitHub.
   const checkout = path.join(__dirname, 'data', 'mathlib4');
   const fetchSource = fs.existsSync(path.join(checkout, 'Mathlib')) ? localSource(checkout) : fetchFromGitHub;
-  createServer(dbPath, { fetchSource }).listen(port, '127.0.0.1', () => {
+  // Lean itself, for statements with every inferred type filled in. It needs the compiled
+  // Mathlib next to the checkout (`lake exe cache get` in data/mathlib4) and Lean's `lake`.
+  const os = require('node:os');
+  const elan = path.join(os.homedir(), '.elan', 'bin');
+  const compiled = fs.existsSync(path.join(checkout, '.lake', 'build', 'lib'));
+  const lean = new LeanStatements({
+    cachePath: path.join(__dirname, 'data', 'lean-cache.v2.db'), // v2: printed with Mathlib's scoped notation on
+    command: compiled ? (fs.existsSync(path.join(elan, 'lake')) ? path.join(elan, 'lake') : 'lake') : null,
+    args: ['env', 'lean', '--run', path.join(__dirname, 'lean', 'Signatures.lean')],
+    cwd: checkout,
+    env: { ...process.env, PATH: `${elan}${path.delimiter}${process.env.PATH || ''}` },
+  });
+  if (compiled) {
+    console.log('Lean: loading Mathlib in the background…');
+    lean.start().then((ok) => console.log(ok ? 'Lean: ready.' : `Lean: could not start; statements come from the source text only.\n${lean.lastError || ''}`));
+  } else console.log('Lean: not set up (no compiled Mathlib in data/mathlib4); statements come from the source text.');
+  createServer(dbPath, { fetchSource, lean }).listen(port, '127.0.0.1', () => {
     console.log(`Mathlib graph navigator: http://127.0.0.1:${port}/`);
   });
 }

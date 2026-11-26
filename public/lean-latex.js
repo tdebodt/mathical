@@ -72,6 +72,7 @@
   function ident(name) {
     if (name === '𝕜') return '\\Bbbk';
     if (name === 'Complex.I' || (name === 'I' && complex)) return 'i';
+    if (name === 'rexp' || name === 'cexp') return '\\exp'; // Mathlib's short names for the real and complex exponential
     const known = standard(name);
     if (known && Object.hasOwn(CONSTANTS, known)) return CONSTANTS[known];
     if (known && Object.hasOwn(FUNCTIONS, known)) return FUNCTIONS[known];
@@ -131,6 +132,18 @@
   function nest(tokens) {
     try { return nestWith(tokens, true); } catch { return nestWith(tokens, false); } // bars that do not pair up stay as signs
   }
+  // `√x`, `√(x + 1)`: the root sign and the term after it become one term, so that it can
+  // be an argument, a factor or a denominator like any bracket.
+  function roots(items) {
+    const out = [];
+    for (let i = 0; i < items.length; i++) {
+      const next = items[i + 1];
+      const coverable = next && (next.t === 'id' || next.t === 'num' || next.t === 'group' || (next.t === 'sym' && next.v in ATOMS));
+      if (items[i].t === 'sym' && items[i].v === '√' && coverable) out.push({ t: 'group', open: '√', items: [items[++i]] });
+      else out.push(items[i]);
+    }
+    return out;
+  }
   function nestWith(tokens, pairNorms) {
     let i = 0;
     const complete = (n) => !!n && (n.t === 'id' || n.t === 'num' || n.t === 'group' || n.t === 'sup' || (n.t === 'sym' && n.v in ATOMS));
@@ -139,13 +152,13 @@
       while (i < tokens.length) {
         const tok = tokens[i++];
         if (pairNorms && tok.t === 'sym' && tok.v === '‖') {
-          if (closer === '‖' && complete(items[items.length - 1])) return items;
+          if (closer === '‖' && complete(items[items.length - 1])) return roots(items);
           items.push({ t: 'group', open: '‖', items: seq('‖') });
           continue;
         }
         if (tok.t === 'close') {
           if (tok.v !== closer) throw new Error('unbalanced brackets');
-          return items;
+          return roots(items);
         }
         if (tok.t === 'open') items.push({ t: 'group', open: tok.v, items: seq(CLOSER[tok.v]) });
         else if (tok.t === 'proj') {
@@ -154,9 +167,9 @@
         } else items.push(tok);
       }
       if (closer) throw new Error('unbalanced brackets');
-      return items;
+      return roots(items);
     };
-    return seq(null);
+    return roots(seq(null));
   }
 
   // `x : T` reads "x in T" when T is a collection of values: not a function type, not a universe.
@@ -379,6 +392,7 @@
         else if (node.open === '[') atom(`\\left[${body}\\right]`);
         else if (node.open === '⟨') atom(`\\langle ${body} \\rangle`);
         else if (node.open === '‖') atom(`\\| ${body} \\|`);
+        else if (node.open === '√') atom(`\\sqrt{${inner(node.items[0])}}`);
         else if (node.open === '⟪') {
           // An inner product ⟪x, y⟫, optionally tagged with its scalar field: ⟪x, y⟫_ℝ.
           const tagged = items[i + 1] && items[i + 1].t === 'sym' && items[i + 1].v === '_' && isOperand(items[i + 2]);
@@ -439,6 +453,7 @@
         else if ((v === "''" || v === "⁻¹'") && (used = image(i, v === "''" ? '' : '^{-1}'))) i = used;
         else if (v === '⁻¹' || v === "⁻¹'") postfix('^{-1}'); // inverse; a preimage sign with nothing after it
         else if (v === 'ᶜ') postfix('^{c}');
+        else if (v === '!' && out.length && out[out.length - 1].atom) out[out.length - 1].s += '!'; // factorial: `n !`, `(n + 1)!`
         else if (v in BIGOPS && items.slice(i + 1).some((n) => n.t === 'sym' && n.v === ',')) {
           const end = items.findIndex((n, k) => k > i && n.t === 'sym' && n.v === ',');
           op(`${BIGOPS[v]}_{${render(items.slice(i + 1, end))}}`);

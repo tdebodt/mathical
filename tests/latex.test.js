@@ -564,3 +564,25 @@ test('an interval may have a symbol such as π or ∞ as a bound', () => {
   assert.equal(expr('Set.InjOn cos (Icc 0 π)'), '\\cos \\text{ is injective on } \\left[0, \\pi\\right]');
   assert.equal(expr('Set.Ioo (-π) π'), '\\left(- \\pi, \\pi\\right)');
 });
+
+test('a root and what it covers are one term, as Lean prints them without brackets', () => {
+  assert.equal(expr('Irrational √2'), '\\sqrt{2} \\text{ is irrational}');
+  assert.equal(expr('√x * √x = x'), '\\sqrt{x}^{2} = x');
+  assert.equal(expr('1 / √(x + 1)'), '\\frac{1}{\\sqrt{x + 1}}');
+  assert.equal(expr('Real.sqrt_nonneg √'), '\\mathrm{Real.sqrt\\_nonneg}\\,\\sqrt{{}}'); // a root sign with nothing after it
+});
+
+test('statements as Lean prints them: full names, instances called self, universe names', () => {
+  assert.equal(prose('theorem continuousOn_cos {s : Set ℝ} : ContinuousOn Real.cos s', '', 'Real.continuousOn_cos'), 'Let $s \\subseteq \\mathbb{R}$. Then');
+  assert.equal(toLatex('theorem continuousOn_cos {s : Set ℝ} : ContinuousOn Real.cos s', 'Real.continuousOn_cos', '').thesis, '\\cos \\text{ is continuous on } s');
+  assert.equal(toLatex('abbrev toNonAssocSemiring {α : Type u} [self : Semiring α] : NonAssocSemiring α', 'Semiring.toNonAssocSemiring', '').thesis,
+    '\\mathrm{toNonAssocSemiring} \\in \\mathrm{NonAssocSemiring}\\,\\alpha');
+});
+
+test('notation as Lean prints it: rexp, cexp and the postfix factorial', () => {
+  assert.equal(expr('Filter.Tendsto rexp Filter.atTop Filter.atTop'), '\\exp \\to +\\infty \\text{ at } +\\infty');
+  assert.equal(expr('cexp (π * I)'), '\\exp\\,\\left(\\pi \\cdot I\\right)');
+  assert.equal(expr('(n + 1)! = (n + 1) * n !'), '\\left(n + 1\\right)! = \\left(n + 1\\right) \\cdot n!');
+  assert.equal(expr('n ! ∣ m !'), 'n! \\mid m!');
+  assert.equal(expr('0 ≤ ↑r'), '0 \\le r');
+});
