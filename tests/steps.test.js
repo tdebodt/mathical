@@ -181,6 +181,20 @@ test('rewrites one after the other on the same thing form a run, which the page 
   assert.deepEqual(proof.steps.map((s) => [s.text, s.run]), [['a', 1], ['b', 1], ['c', 2], ['d', 3], ['exact z', undefined]]);
 });
 
+test('a piece of a longer command recorded without a name is not a rewrite: only what sits in the brackets of one is', () => {
+  // `intro x y` is recorded as a whole and, without a name, as its first piece `intro x`
+  const g = goal('g', '∀ x y, P x y', []), g1 = goal('g1', '∀ y, P x y', [['x', 'ℝ']]), g2 = goal('g2', 'P x y', [['x', 'ℝ'], ['y', 'ℝ']]);
+  const proof = arrange([
+    step(0, 7, 'null', 'intro x', [g], [g1]),
+    step(8, 9, 'ident', 'y', [g1], [g2]), // and each further name on its own, as a term
+    step(0, 9, 'Lean.Parser.Tactic.intro', 'intro x y', [g], [g2]),
+    step(10, 17, 'Lean.Parser.Tactic.exact', 'exact h', [g2], []),
+  ]);
+  assert.deepEqual(proof.steps.map((s) => [s.text, s.rewrite, s.says]), [
+    ['intro x y', false, 'take x, y arbitrary'], ['exact h', false, 'conclude with'],
+  ]);
+});
+
 // ---------- each step said in plain words ----------
 const said = (kind, text, before, after) => arrange([step(0, Buffer.byteLength(text), kind, text, before, after)]).steps[0].says;
 
@@ -233,6 +247,8 @@ test('in words: common steps; a command not in the list, or a combination, is le
   assert.equal(said('Lean.Parser.Tactic.left', 'left', [g], [g1]), 'prove the left alternative');
   assert.equal(said('Lean.Parser.Tactic.induction', 'induction n with', [g], [g1, g2]), 'by induction on n');
   assert.equal(said('x', 'frobnicate h', [g], [g1]), null);
+  // transitivity: a < c is proved as a < b and b < c
+  assert.equal(said('Batteries.Tactic.tacticTrans___', 'trans y⁻¹', [goal('g', 'a < c')], [goal('p', 'a < y⁻¹'), goal('q', 'y⁻¹ < c')]), 'compare both sides with y⁻¹: 2 things to prove');
   assert.equal(said('Lean.Parser.Tactic.«tactic_<;>_»', 'constructor <;> simp', [g], []), null);
   const claim = goal('g1', 'P', [['x', 'ℝ'], ['h', '0 < x', true]]);
   assert.equal(said('Lean.Parser.Tactic.tacticHave__', 'have h : 0 < x := foo', [g], [claim]), 'intermediate claim h');
