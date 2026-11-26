@@ -69,3 +69,23 @@ test('many questions at once all get their own answer', async () => {
   all.forEach((got, i) => assert.deepEqual(Object.keys(got), [i % 2 ? 'Thm' : 'Real.continuousOn_cos']));
   await lean.close();
 });
+
+test('what a declaration uses, in its statement and in its proof, is asked once and remembered', async () => {
+  const cachePath = tmp();
+  const lean = start('ok', cachePath);
+  assert.deepEqual(await lean.uses(['Thm', 'Nope']), { Thm: { statement: ['Hub'], proof: ['A', 'Hub', 'B'] } });
+  await lean.close();
+  const offline = new LeanStatements({ cachePath, command: process.execPath, args: [fake, 'dies'] });
+  assert.deepEqual(await offline.uses(['Thm', 'Nope', 'L1']), { Thm: { statement: ['Hub'], proof: ['A', 'Hub', 'B'] } });
+  await offline.close();
+});
+
+test('whether a theorem is proved by reflexivity is asked once and remembered', async () => {
+  const cachePath = tmp();
+  const lean = start('ok', cachePath);
+  assert.deepEqual(await lean.roles(['Thm', 'A', 'Nope']), { Thm: { rfl: false }, A: { rfl: true } });
+  await lean.close();
+  const offline = new LeanStatements({ cachePath, command: process.execPath, args: [fake, 'dies'] });
+  assert.deepEqual(await offline.roles(['A', 'Nope', 'B']), { A: { rfl: true } });
+  await offline.close();
+});

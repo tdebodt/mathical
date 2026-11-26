@@ -39,10 +39,19 @@ seconds, during which the page works from the source text; a view of new nodes t
 gets its statements in a fraction of a second. The top bar shows "Lean: ready".
 
 - The Lean program is `lean/Signatures.lean`; `lib/lean.js` runs it and keeps its
-  answers in `data/lean-cache.v2.db`, which survives `node build.js`.
+  answers in `data/lean-cache.v3.db`, which survives `node build.js`.
 - It covers declarations the source never writes out (the ones Lean generates), and
   switches on Mathlib's common scoped notations so that statements print as their
   authors wrote them.
+- With Lean, the column next to the focus is split in two: what the statement itself
+  involves (drawn with green edges), and what only the proof uses. On the right, the
+  results that state something about the focus come apart from those that merely use
+  it in their proof. Lean reports this exactly, from the compiled declarations.
+- With Lean, a theorem can carry a tag saying what kind of statement it is, from three
+  tests that use no naming convention and so apply to any Lean project. **cast rule**:
+  with the canonical maps erased, both sides say the same thing (`ι(r/s) = ι(r)/ι(s)`).
+  **by definition**: Lean proves it by unfolding definitions. **corollary**: its proof
+  rests on a single other result. **hide bookkeeping** hides the first two kinds.
 - Without Lean, nothing else changes: statements come from the source text.
 
 ## Using it
@@ -92,6 +101,10 @@ gets its statements in a fraction of a second. The top bar shows "Lean: ready".
   is underlined: click it to focus on that dependency, or hover it to pick out its
   node in the graph. Dependencies named in the code are always drawn, listed first,
   in addition to the top-ranked ones.
+  The proof is shown as an outline by default: the claims its author states along the
+  way (`have`, `obtain`, `suffices`, `calc` …), typeset, with the comments as prose and
+  a count of the tactic lines in between; "Lean" switches to the source. The outline
+  is read from the text (`public/lean-outline.js`), not from Lean's goals.
   Statements are read from the clone of Mathlib's `master` branch that `build.js`
   makes in `data/mathlib4` (delete that folder and build again to refresh it), so
   no internet access is needed while browsing; the "Source file" link opens that
@@ -114,6 +127,15 @@ gets its statements in a fraction of a second. The top bar shows "Lean: ready".
   max, Re and Im. This applies only where the name has its standard meaning
   (`Real.pi`, `Complex.exp`, `Nat.gcd`); `Finset.pi` keeps its Lean name. The table
   is at the top of `ident` in `public/lean-latex.js`.
+- Standard spaces are written with their symbol: `Real.Angle` is ℝ/2πℤ, `ZMod n` is
+  ℤ/nℤ, `NNReal` is ℝ≥0, `ENNReal` is [0, ∞], `Circle` is 𝕊¹, `Matrix m n R` is
+  M_{m×n}(R), `Rˣ` the units of R. The tables `SPACES` and `SPACES_OF` are next to
+  `ident` in `public/lean-latex.js`.
+- A coercion (Lean's `↑x`: a real number regarded as a complex one, a natural number
+  as a real) is written as a named map: "Let ι : ℝ → ℂ be the canonical map. Then
+  ι(r/s) = ι(r)/ι(s)". It is never left out: without it, a statement about the map
+  reads `r/s = r/s`. With several maps in one statement they are told apart by
+  where they land, ι_ℝ and ι_ℂ.
 - Predicates are put into words: `ContinuousOn f s` reads "f is continuous on s",
   `StrictConcaveOn ℝ s f` "f is strictly concave on s", `s.Nonempty` "s is nonempty",
   and `Tendsto f atTop (𝓝 a)` "f → a at +∞". About 110 are covered, in `PREDICATES`

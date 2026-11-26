@@ -78,6 +78,7 @@ test('serves the page at / and 404s elsewhere', async () => {
   assert.match(js.type, /javascript/);
   assert.equal((await get('/lean-latex.js')).status, 200);
   assert.equal((await get('/lean-phrases.js')).status, 200);
+  assert.equal((await get('/lean-outline.js')).status, 200);
 });
 
 test('path traversal is refused', async () => {
@@ -227,4 +228,55 @@ test('without Lean: the elaborate endpoint answers empty and nodes are as before
   assert.deepEqual(got, { state: 'off', statements: {} });
   assert.deepEqual(await (await fetch(base + '/api/lean')).json(), { state: 'off' });
   assert.equal('lean' in (await get('/api/node?name=Thm')).body.focus, false);
+});
+
+test('with Lean: whether a dependency is used by the statement, the proof, or both', async () => {
+  const fs = require('node:fs'), os = require('node:os'), path = require('node:path');
+  const { LeanStatements } = require('../lib/lean');
+  const cachePath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'mathical-srv-uses-')), 'cache.db');
+  const lean = new LeanStatements({ cachePath, command: process.execPath, args: [path.join(__dirname, 'fixtures', 'fake-lean.js')] });
+  const s = createServer(dbPathForSource, { lean });
+  await new Promise((r) => s.listen(0, '127.0.0.1', r));
+  const post = async (body) => (await fetch(`http://127.0.0.1:${s.address().port}/api/uses`, { method: 'POST', body: JSON.stringify(body) })).json();
+  try {
+    // Thm's statement mentions Hub; its proof uses A, B and Hub again
+    assert.deepEqual(await post({ focus: 'Thm', dependencies: ['A', 'Hub', 'Ghost'], dependents: [] }),
+      { state: 'ready', out: { A: 'proof', Hub: 'both' }, in: {} });
+    // seen from Hub: L1 states something about it, L2 only uses it to prove something else
+    assert.deepEqual(await post({ focus: 'Hub', dependencies: [], dependents: ['L1', 'L2', 'L3'] }),
+      { state: 'ready', out: {}, in: { L1: 'statement', L2: 'proof' } });
+    assert.equal((await fetch(`http://127.0.0.1:${s.address().port}/api/uses`, { method: 'POST', body: '{}' })).status, 400);
+  } finally {
+    await new Promise((r) => s.close(r));
+  }
+});
+
+test('without Lean: the uses endpoint answers empty', async () => {
+  const got = await (await fetch(base + '/api/uses', { method: 'POST', body: JSON.stringify({ focus: 'Thm', dependencies: ['A'], dependents: [] }) })).json();
+  assert.deepEqual(got, { state: 'off', out: {}, in: {} });
+});
+
+test('with Lean: what a theorem rests on, and whether it holds by definition', async () => {
+  const fs = require('node:fs'), os = require('node:os'), path = require('node:path');
+  const { LeanStatements } = require('../lib/lean');
+  const cachePath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'mathical-srv-roles-')), 'cache.db');
+  const lean = new LeanStatements({ cachePath, command: process.execPath, args: [path.join(__dirname, 'fixtures', 'fake-lean.js')] });
+  const s = createServer(dbPathForSource, { lean });
+  await new Promise((r) => s.listen(0, '127.0.0.1', r));
+  const post = async (body) => fetch(`http://127.0.0.1:${s.address().port}/api/roles`, { method: 'POST', body: JSON.stringify(body) });
+  try {
+    // Thm's proof uses the theorems A and B, and the definition Hub, which is not a fact
+    assert.deepEqual(await (await post({ names: ['Thm', 'A', 'Hub', 'NotANode'] })).json(), {
+      state: 'ready',
+      roles: { Thm: { byDefinition: false, facts: ['A', 'B'] }, A: { byDefinition: true, facts: null } },
+    });
+    assert.equal((await post({})).status, 400);
+  } finally {
+    await new Promise((r) => s.close(r));
+  }
+});
+
+test('without Lean: the roles endpoint answers empty', async () => {
+  const got = await (await fetch(base + '/api/roles', { method: 'POST', body: JSON.stringify({ names: ['Thm'] }) })).json();
+  assert.deepEqual(got, { state: 'off', roles: {} });
 });

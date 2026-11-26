@@ -24,7 +24,7 @@ test('expr: binders, sets, big operators, number sets', () => {
   assert.equal(expr('{x | 0 < x}'), '\\{ x \\mid 0 < x \\}');
   assert.equal(expr('∀ ε > 0, ∃ δ > 0, ‖x‖ < δ'), '\\forall \\varepsilon > 0,\\; \\exists \\delta > 0,\\; \\| x \\| < \\delta');
   assert.equal(expr('x₁ ∈ Set.range ((↑) : ℚ → ℝ)'), 'x_{1} \\in \\mathrm{Set.range}\\,\\left(\\left(\\uparrow\\right) : \\mathbb{Q} \\to \\mathbb{R}\\right)');
-  assert.equal(expr('(↑n : ℝ≥0∞) ≤ ⊤'), '\\left(n : \\overline{\\mathbb{R}}_{\\ge 0}\\right) \\le \\top');
+  assert.equal(expr('(↑n : ℝ≥0∞) ≤ ⊤'), '\\iota_{\\overline{\\mathbb{R}}_{\\ge 0}}\\left(n\\right) \\le \\top');
   assert.equal(expr('α → Type*'), '\\alpha \\to \\mathrm{Type}');
 });
 
@@ -584,7 +584,7 @@ test('notation as Lean prints it: rexp, cexp and the postfix factorial', () => {
   assert.equal(expr('cexp (π * I)'), '\\exp\\,\\left(\\pi \\cdot I\\right)');
   assert.equal(expr('(n + 1)! = (n + 1) * n !'), '\\left(n + 1\\right)! = \\left(n + 1\\right) \\cdot n!');
   assert.equal(expr('n ! ∣ m !'), 'n! \\mid m!');
-  assert.equal(expr('0 ≤ ↑r'), '0 \\le r');
+  assert.equal(expr('0 ≤ ↑r'), '0 \\le \\iota\\left(r\\right)');
 });
 
 test('a standard function named as the subject of a property carries its domain and range', () => {
@@ -616,4 +616,113 @@ test('limits are said in words, name the function with its domain, and know one-
   assert.equal(expr('Tendsto f (𝓝[Set.Ici a] a) (𝓝 b)'), 'f \\text{ tends to } b \\text{ at } a \\text{ within } \\left[a, +\\infty\\right)');
   assert.equal(expr('Tendsto Real.log atTop atTop'), '\\log : \\mathbb{R} \\to \\mathbb{R} \\text{ tends to } +\\infty \\text{ at } +\\infty');
   assert.equal(expr('Tendsto (fun r => r⁻¹) atTop (𝓝 0)'), '\\left(r \\mapsto r^{-1}\\right) \\text{ tends to } 0 \\text{ at } +\\infty');
+});
+
+
+test('coercions: a cast is written as a named map ι, introduced in words', () => {
+  const r = toLatex('theorem ofReal_div (r s : ℝ) : (↑(r / s) : ℂ) = (↑r : ℂ) / (↑s : ℂ)', 'Complex.ofReal_div', '');
+  assert.equal(r.thesis, '\\iota\\left(\\frac{r}{s}\\right) = \\frac{\\iota\\left(r\\right)}{\\iota\\left(s\\right)}');
+  assert.equal(r.parts.slice(0, -1).map((p) => ('text' in p ? p.text : `$${p.math}$`)).join(''),
+    'Let $r, s \\in \\mathbb{R}$. Let $\\iota : \\mathbb{R} \\to \\mathbb{C}$ be the canonical map. Then');
+  assert.equal(r.source,
+    '\\begin{theorem}[\\texttt{Complex.ofReal\\_div}]\n' +
+    'Let $r, s \\in \\mathbb{R}$. Let $\\iota : \\mathbb{R} \\to \\mathbb{C}$ be the canonical map. Then\n' +
+    '\\[ \\iota\\left(\\frac{r}{s}\\right) = \\frac{\\iota\\left(r\\right)}{\\iota\\left(s\\right)} \\]\n' +
+    '\\end{theorem}');
+  assert.equal(prose('theorem coe_nonneg (r : ℝ≥0) : 0 ≤ (↑r : ℝ)'),
+    'Let $r \\in \\mathbb{R}_{\\ge 0}$. Let $\\iota : \\mathbb{R}_{\\ge 0} \\to \\mathbb{R}$ be the canonical map. Then');
+});
+
+test('coercions: when where the map starts is not written, only where it lands is said', () => {
+  assert.equal(prose('theorem t (x : ℝ) : (↑(f x) : ℂ) = 0'), 'Let $x \\in \\mathbb{R}$. Let $\\iota$ be the canonical map into $\\mathbb{C}$. Then');
+  const bare = toLatex('theorem t : (↑(1 : ℕ) : ℝ) = 1', 't', '');
+  assert.equal(bare.thesis, '\\iota\\left(1 : \\mathbb{N}\\right) = 1');
+  assert.equal(bare.parts.slice(0, -1).map((p) => ('text' in p ? p.text : `$${p.math}$`)).join(''), 'Let $\\iota$ be the canonical map into $\\mathbb{R}$. Then');
+});
+
+test('coercions: several maps in one statement are told apart by where they land', () => {
+  const r = toLatex('theorem t (n : ℕ) : (↑(↑n : ℝ) : ℂ) = (↑n : ℂ)', 't', '');
+  assert.equal(r.thesis, '\\iota_{\\mathbb{C}}\\left(\\iota_{\\mathbb{R}}\\left(n\\right)\\right) = \\iota_{\\mathbb{C}}\\left(n\\right)');
+  assert.equal(r.parts.slice(0, -1).map((p) => ('text' in p ? p.text : `$${p.math}$`)).join(''),
+    'Let $n \\in \\mathbb{N}$. Let $\\iota_{\\mathbb{R}}$, $\\iota_{\\mathbb{C}}$ be the canonical maps into $\\mathbb{R}$, $\\mathbb{C}$. Then');
+});
+
+test('coercions: source text without Lean gives no target, and the map is still named', () => {
+  const r = toLatex('theorem cast_succ (n : ℕ) : ↑(n + 1) = ↑n + 1', 'Nat.cast_succ', '');
+  assert.equal(r.thesis, '\\iota\\left(n + 1\\right) = \\iota\\left(n\\right) + 1');
+  assert.equal(r.parts.slice(0, -1).map((p) => ('text' in p ? p.text : `$${p.math}$`)).join(''),
+    'Let $n \\in \\mathbb{N}$. Let $\\iota$ be the canonical map from $\\mathbb{N}$. Then');
+  assert.equal(expr('↑(r / s) = ↑r / ↑s'), '\\iota\\left(\\frac{r}{s}\\right) = \\frac{\\iota\\left(r\\right)}{\\iota\\left(s\\right)}');
+  assert.equal(expr('(↑(Real.cos x) : ℂ) = Complex.cos (↑x : ℂ)'), '\\iota_{\\mathbb{C}}\\left(\\cos\\,x\\right) = \\cos\\,\\iota_{\\mathbb{C}}\\left(x\\right)');
+  assert.equal(expr('((↑) : ℚ → ℝ)'), '\\left(\\left(\\uparrow\\right) : \\mathbb{Q} \\to \\mathbb{R}\\right)'); // the map itself, unapplied
+});
+
+test('a statement without coercions is untouched', () => {
+  assert.equal(prose('theorem t (x : ℝ) (h : 0 < x) : 0 ≤ x'), 'Let $x \\in \\mathbb{R}$. Assume $0 < x$. Then');
+});
+
+test('the non-negative rationals ℚ≥0 are one symbol, like ℝ≥0', () => {
+  assert.equal(expr('(q : ℚ≥0) ≤ 1'), '\\left(q : \\mathbb{Q}_{\\ge 0}\\right) \\le 1');
+  assert.equal(prose('theorem t (q : ℚ≥0) : 0 ≤ q'), 'Let $q \\in \\mathbb{Q}_{\\ge 0}$. Then');
+});
+
+test('standard spaces are written with their usual symbol, not their Lean name', () => {
+  assert.equal(expr('θ ∈ Real.Angle'), '\\theta \\in \\mathbb{R}/2\\pi\\mathbb{Z}');
+  assert.equal(expr('x ∈ UnitAddCircle'), 'x \\in \\mathbb{R}/\\mathbb{Z}');
+  assert.equal(expr('z ∈ Circle'), 'z \\in \\mathbb{S}^{1}');
+  assert.equal(expr('f : NNReal → ENNReal'), 'f : \\mathbb{R}_{\\ge 0} \\to [0, \\infty]');
+  assert.equal(expr('x : EReal'), 'x : [-\\infty, +\\infty]');
+  assert.equal(expr('f : Nat → Int → Rat → Real → Complex'), 'f : \\mathbb{N} \\to \\mathbb{Z} \\to \\mathbb{Q} \\to \\mathbb{R} \\to \\mathbb{C}');
+  assert.equal(expr('a : ZMod n'), 'a : \\mathbb{Z}/n\\mathbb{Z}');
+  assert.equal(expr('a : ZMod (p ^ k)'), 'a : \\mathbb{Z}/p^{k}\\mathbb{Z}');
+  assert.equal(expr('x : AddCircle T'), 'x : \\mathbb{R}/T\\mathbb{Z}');
+  assert.equal(expr('x : ℚ_[p]'), 'x : \\mathbb{Q}_{p}');
+  assert.equal(expr('x : ℤ_[p]'), 'x : \\mathbb{Z}_{p}');
+  assert.equal(expr('σ : Equiv.Perm α'), '\\sigma : \\operatorname{Sym}\\left(\\alpha\\right)');
+  assert.equal(expr('A : Matrix m n R'), 'A : \\mathrm{M}_{m \\times n}\\left(R\\right)');
+  assert.equal(expr('u : Rˣ'), 'u : R^{\\times}');
+});
+
+test('standard spaces: a variable of such a type is "in" it, and a cast into it names it', () => {
+  assert.equal(prose('theorem t (θ : Real.Angle) : θ = θ'), 'Let $\\theta \\in \\mathbb{R}/2\\pi\\mathbb{Z}$. Then');
+  assert.equal(prose('theorem tan_coe (x : ℝ) : Real.Angle.tan (↑x : Real.Angle) = Real.tan x', '', 'Real.Angle.tan_coe'),
+    'Let $x \\in \\mathbb{R}$. Let $\\iota : \\mathbb{R} \\to \\mathbb{R}/2\\pi\\mathbb{Z}$ be the canonical map. Then');
+  // inside the Real namespace the source writes a bare `Angle`
+  assert.equal(prose('theorem t (θ : Angle) : θ = θ', '', 'Real.Angle.t'), 'Let $\\theta \\in \\mathbb{R}/2\\pi\\mathbb{Z}$. Then');
+  assert.equal(prose('theorem t (θ : Angle) : θ = θ', '', 'Foo.t'), 'Let $\\theta \\in \\mathrm{Angle}$. Then');
+});
+
+test('standard spaces: only when used as such', () => {
+  assert.equal(expr('ZMod'), '\\mathrm{ZMod}'); // not applied
+  assert.equal(expr('Foo.Angle'), '\\mathrm{Foo.Angle}');
+  assert.equal(expr('Matrix m n'), '\\mathrm{Matrix}\\,m\\,n'); // an argument is missing
+});
+
+test('a function written after its argument with a dot: (x).tan is tan(x)', () => {
+  assert.equal(toLatex('theorem tan_coe (x : ℝ) : (↑x : Real.Angle).tan = Real.tan x', 'Real.Angle.tan_coe', '').thesis, '\\tan\\left(\\iota\\left(x\\right)\\right) = \\tan\\,x');
+  assert.equal(prose('theorem tan_coe (x : ℝ) : (↑x : Real.Angle).tan = Real.tan x', '', 'Real.Angle.tan_coe'),
+    'Let $x \\in \\mathbb{R}$. Let $\\iota : \\mathbb{R} \\to \\mathbb{R}/2\\pi\\mathbb{Z}$ be the canonical map. Then');
+  assert.equal(expr('(a + b).exp'), '\\exp\\left(a + b\\right)');
+  assert.equal(expr('(a + b).foo'), '\\left(a + b\\right).\\mathrm{foo}');
+});
+
+test('castRule: a statement that says the same thing on both sides once the casts are erased', () => {
+  const { castRule } = require('../public/lean-latex.js');
+  assert.equal(castRule('theorem ofReal_div (r s : ℝ) : (↑(r / s) : ℂ) = (↑r : ℂ) / (↑s : ℂ)', 'Complex.ofReal_div', ''), true);
+  assert.equal(castRule('theorem cast_add (m n : ℕ) : (↑(m + n) : R) = (↑m : R) + (↑n : R)', 'Nat.cast_add', ''), true);
+  assert.equal(castRule('theorem tan_coe (x : ℝ) : (↑x : Real.Angle).tan = Real.tan x', 'Real.Angle.tan_coe', ''), true); // tan on angles, tan on reals
+  assert.equal(castRule('theorem cast_le {m n : ℕ} : (↑m : ℝ) ≤ (↑n : ℝ) ↔ m ≤ n', 'Nat.cast_le', ''), true);
+  assert.equal(castRule('theorem cast_inj {m n : ℕ} : (↑m : ℝ) = (↑n : ℝ) ↔ m = n', 'Nat.cast_inj', ''), true);
+  assert.equal(castRule('theorem cast_succ (n : ℕ) : ↑(n + 1) = ↑n + 1', 'Nat.cast_succ', ''), true); // source text, no types
+});
+
+test('castRule: a statement with content is not one, cast or no cast', () => {
+  const { castRule } = require('../public/lean-latex.js');
+  assert.equal(castRule('theorem coe_two_pi : (↑(2 * π) : Real.Angle) = 0', 'Real.Angle.coe_two_pi', ''), false); // 2π is the zero angle: a fact
+  assert.equal(castRule('theorem natCast_self (n : ℕ) : (↑n : ZMod n) = 0', 'ZMod.natCast_self', ''), false);
+  assert.equal(castRule('theorem t (x : ℝ) : x = x', 't', ''), false); // no cast at all
+  assert.equal(castRule('theorem sqrt_nonneg (x : ℝ) : 0 ≤ √x', 'Real.sqrt_nonneg', ''), false);
+  assert.equal(castRule('theorem t (n : ℕ) : (↑n : ℝ) < (↑n : ℝ) + 1', 't', ''), false);
+  assert.equal(castRule('def f (n : ℕ) : ℝ', 'f', ''), false);
+  assert.equal(castRule('structure S where', 'S', ''), false);
 });

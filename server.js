@@ -1,7 +1,7 @@
 const fs = require('node:fs');
 const http = require('node:http');
 const path = require('node:path');
-const { open, search, neighborhood } = require('./lib/graphdb');
+const { open, search, neighborhood, facts } = require('./lib/graphdb');
 const { locate, localSource, modulePath } = require('./lib/leansource');
 const { LeanStatements } = require('./lib/lean');
 
@@ -25,6 +25,7 @@ const STATIC = {
   '/lean.js': ['lean.js', 'text/javascript; charset=utf-8'],
   '/lean-latex.js': ['lean-latex.js', 'text/javascript; charset=utf-8'],
   '/lean-phrases.js': ['lean-phrases.js', 'text/javascript; charset=utf-8'],
+  '/lean-outline.js': ['lean-outline.js', 'text/javascript; charset=utf-8'],
 };
 
 // `lean`, when given, is a LeanStatements: the source of statements as Lean elaborates them.
@@ -89,6 +90,44 @@ function createServer(dbPath, { fetchSource = fetchFromGitHub, lean = null } = {
     return { found: true, ...rest, deps, url: `${GITHUB}${foundIn}#L${decl.line}` };
   };
 
+  // For the declaration `focus`: of the `dependencies` given, which its statement mentions,
+  // which only its proof uses, and which both do; and for each of the `dependents` given,
+  // whether it mentions the focus in its own statement or only uses it in its proof.
+  const where = (u, name) => {
+    const inStatement = u.statement.includes(name), inProof = u.proof.includes(name);
+    return inStatement && inProof ? 'both' : inStatement ? 'statement' : inProof ? 'proof' : null;
+  };
+  const usesOf = async (focus, dependencies, dependents) => {
+    if (!lean) return { state: 'off', out: {}, in: {} };
+    const names = (list) => [...new Set((Array.isArray(list) ? list : []).filter((n) => typeof n === 'string'))].slice(0, 400);
+    const known = await lean.uses([focus, ...names(dependents)]);
+    const out = {}, into = {};
+    if (known[focus]) for (const dep of names(dependencies)) { const role = where(known[focus], dep); if (role) out[dep] = role; }
+    for (const d of names(dependents)) { const role = known[d] && where(known[d], focus); if (role) into[d] = role; }
+    return { state: lean.state, out, in: into };
+  };
+
+  // For each theorem among `names`: whether it holds by definition (its proof is reflexivity),
+  // and the facts its proof rests on: the theorems it uses, plumbing set aside. One fact
+  // means a corollary of it. `facts` is null when Lean has not said what the proof uses.
+  const rolesOf = async (names) => {
+    if (!lean) return { state: 'off', roles: {} };
+    const wanted = [...new Set((Array.isArray(names) ? names : []).filter((n) => typeof n === 'string'))].slice(0, 400);
+    const theorems = wanted.length
+      ? db.prepare(`SELECT name FROM nodes WHERE kind = 'theorem' AND name IN (${wanted.map(() => '?').join(',')})`).all(...wanted).map((r) => r.name)
+      : [];
+    const [byRfl, used] = await Promise.all([lean.roles(theorems), lean.uses(theorems)]);
+    const roles = {};
+    for (const name of theorems) {
+      if (!byRfl[name] && !used[name]) continue;
+      roles[name] = {
+        byDefinition: byRfl[name] ? byRfl[name].rfl : null,
+        facts: used[name] ? facts(db, used[name].proof.filter((n) => n !== name)) : null,
+      };
+    }
+    return { state: lean.state, roles };
+  };
+
   const json = (res, status, body) => {
     res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
     res.end(JSON.stringify(body));
@@ -101,7 +140,7 @@ function createServer(dbPath, { fetchSource = fetchFromGitHub, lean = null } = {
       const params = new URLSearchParams(query);
 
       // POST /api/node takes the same options as the GET form in a JSON body, plus `pin`.
-      if (req.method === 'POST' && (pathname === '/api/node' || pathname === '/api/elaborate')) {
+      if (req.method === 'POST' && (pathname === '/api/node' || pathname === '/api/elaborate' || pathname === '/api/uses' || pathname === '/api/roles')) {
         const chunks = [];
         let size = 0;
         req.on('data', (chunk) => {
@@ -116,6 +155,14 @@ function createServer(dbPath, { fetchSource = fetchFromGitHub, lean = null } = {
               body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
             } catch {
               return json(res, 400, { error: 'body must be JSON' });
+            }
+            if (pathname === '/api/roles') {
+              if (!body || !Array.isArray(body.names)) return json(res, 400, { error: 'names must be a list' });
+              return rolesOf(body.names).then((out) => json(res, 200, out), (err) => { console.error(err); json(res, 500, { error: 'internal error' }); });
+            }
+            if (pathname === '/api/uses') {
+              if (!body || typeof body.focus !== 'string' || !body.focus) return json(res, 400, { error: 'focus is required' });
+              return usesOf(body.focus, body.dependencies, body.dependents).then((out) => json(res, 200, out), (err) => { console.error(err); json(res, 500, { error: 'internal error' }); });
             }
             if (pathname === '/api/elaborate') {
               if (!body || !Array.isArray(body.names)) return json(res, 400, { error: 'names must be a list' });
@@ -198,7 +245,7 @@ if (require.main === module) {
   const elan = path.join(os.homedir(), '.elan', 'bin');
   const compiled = fs.existsSync(path.join(checkout, '.lake', 'build', 'lib'));
   const lean = new LeanStatements({
-    cachePath: path.join(__dirname, 'data', 'lean-cache.v2.db'), // v2: printed with Mathlib's scoped notation on
+    cachePath: path.join(__dirname, 'data', 'lean-cache.v3.db'), // v3: scoped notation on, coercions printed with their type
     command: compiled ? (fs.existsSync(path.join(elan, 'lake')) ? path.join(elan, 'lake') : 'lake') : null,
     args: ['env', 'lean', '--run', path.join(__dirname, 'lean', 'Signatures.lean')],
     cwd: checkout,

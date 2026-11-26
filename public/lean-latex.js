@@ -15,13 +15,13 @@
   const CLOSER = { '(': ')', '[': ']', '{': '}', '⟨': '⟩', '⦃': '⦄', '⟪': '⟫' };
   const CLOSERS = new Set(Object.values(CLOSER));
   // Longest first: tokens that must not be split.
-  const MULTI = ['ℝ≥0∞', 'ℝ≥0', 'Type*', 'Sort*', "⁻¹'", '⁻¹', "''", '-ᵥ', '+ᵥ', '<->', ':=', '=>', '->', '<=', '>=', '..'];
+  const MULTI = ['ℝ≥0∞', 'ℝ≥0', 'ℚ≥0', 'Type*', 'Sort*', "⁻¹'", '⁻¹', "''", '-ᵥ', '+ᵥ', '<->', ':=', '=>', '->', '<=', '>=', '..'];
   const SUPER = { '⁰': '0', '¹': '1', '²': '2', '³': '3', '⁴': '4', '⁵': '5', '⁶': '6', '⁷': '7', '⁸': '8', '⁹': '9', 'ⁿ': 'n', '⁺': '+', '⁻': '-' };
   const BIGOPS = { '∑': '\\sum', '∏': '\\prod', '⋃': '\\bigcup', '⋂': '\\bigcap', '⨆': '\\bigsqcup', '⨅': '\\mathop{\\sqcap}' };
   // Symbols that stand for a value (an operand)…
   const ATOMS = {
     'ℕ': '\\mathbb{N}', 'ℤ': '\\mathbb{Z}', 'ℚ': '\\mathbb{Q}', 'ℝ': '\\mathbb{R}', 'ℂ': '\\mathbb{C}',
-    'ℝ≥0∞': '\\overline{\\mathbb{R}}_{\\ge 0}', 'ℝ≥0': '\\mathbb{R}_{\\ge 0}', 'Type*': '\\mathrm{Type}', 'Sort*': '\\mathrm{Sort}',
+    'ℝ≥0∞': '\\overline{\\mathbb{R}}_{\\ge 0}', 'ℝ≥0': '\\mathbb{R}_{\\ge 0}', 'ℚ≥0': '\\mathbb{Q}_{\\ge 0}', 'Type*': '\\mathrm{Type}', 'Sort*': '\\mathrm{Sort}',
     '⊤': '\\top', '⊥': '\\bot', '∅': '\\emptyset', '∞': '\\infty', '_': '\\_', '·': '\\cdot', 'π': '\\pi', 'ℵ': '\\aleph',
   };
   // …and symbols that sit between or before operands.
@@ -69,8 +69,26 @@
   };
   const PARTS = { re: '\\operatorname{Re}', im: '\\operatorname{Im}' };
 
+  // Spaces every mathematician writes with a symbol. `Real.Angle` is the reals modulo 2π.
+  const SPACES = {
+    Nat: '\\mathbb{N}', Int: '\\mathbb{Z}', Rat: '\\mathbb{Q}', Real: '\\mathbb{R}', Complex: '\\mathbb{C}',
+    NNReal: '\\mathbb{R}_{\\ge 0}', NNRat: '\\mathbb{Q}_{\\ge 0}', ENNReal: '[0, \\infty]', EReal: '[-\\infty, +\\infty]',
+    'Real.Angle': '\\mathbb{R}/2\\pi\\mathbb{Z}', UnitAddCircle: '\\mathbb{R}/\\mathbb{Z}', Circle: '\\mathbb{S}^{1}',
+    GaussianInt: '\\mathbb{Z}[i]',
+  };
+  // The same for spaces built from something: `ZMod n` is ℤ/nℤ.
+  const SPACES_OF = {
+    ZMod: [1, (n) => `\\mathbb{Z}/${n}\\mathbb{Z}`], AddCircle: [1, (t) => `\\mathbb{R}/${t}\\mathbb{Z}`],
+    Padic: [1, (p) => `\\mathbb{Q}_{${p}}`], PadicInt: [1, (p) => `\\mathbb{Z}_{${p}}`],
+    'Equiv.Perm': [1, (a) => `\\operatorname{Sym}\\left(${a}\\right)`],
+    Matrix: [3, (m, n, r) => `\\mathrm{M}_{${m} \\times ${n}}\\left(${r}\\right)`],
+  };
+
   function ident(name) {
     if (name === '𝕜') return '\\Bbbk';
+    if (name.length > 1 && name.endsWith('ˣ')) return `${ident(name.slice(0, -1))}^{\\times}`; // `Rˣ`: the group of units of R
+    if (Object.hasOwn(SPACES, name)) return SPACES[name];
+    if (name === 'Angle' && home === 'Real') return SPACES['Real.Angle']; // as written inside `namespace Real`
     if (name === 'Complex.I' || (name === 'I' && complex)) return 'i';
     if (name === 'rexp' || name === 'cexp') return '\\exp'; // Mathlib's short names for the real and complex exponential
     const known = standard(name);
@@ -133,13 +151,13 @@
     try { return nestWith(tokens, true); } catch { return nestWith(tokens, false); } // bars that do not pair up stay as signs
   }
   // `√x`, `√(x + 1)`: the root sign and the term after it become one term, so that it can
-  // be an argument, a factor or a denominator like any bracket.
+  // be an argument, a factor or a denominator like any bracket. The same for a coercion `↑x`.
   function roots(items) {
     const out = [];
     for (let i = 0; i < items.length; i++) {
       const next = items[i + 1];
       const coverable = next && (next.t === 'id' || next.t === 'num' || next.t === 'group' || (next.t === 'sym' && next.v in ATOMS));
-      if (items[i].t === 'sym' && items[i].v === '√' && coverable) out.push({ t: 'group', open: '√', items: [items[++i]] });
+      if (items[i].t === 'sym' && (items[i].v === '√' || items[i].v === '↑') && coverable) out.push({ t: 'group', open: items[i].v, items: [items[++i]] });
       else out.push(items[i]);
     }
     return out;
@@ -272,6 +290,23 @@
   const bracket = (b) => (!french ? b : b === '(' ? ']' : b === ')' ? '[' : b);
   const isName = (n) => n && n.t === 'id' && !n.v.includes('.');
 
+  // A coercion carries an element of one type into another: a real number regarded as a
+  // complex one. Mathematics leaves it unwritten; Lean writes `↑x`. It is shown as a map
+  // named ι, since leaving it out can turn a statement about the map into `x = x`.
+  // `coercions`, while a statement is being converted, records each target type with the
+  // plain variables the map was applied to; `iotaPlain` drops the subscript when there is
+  // only one map to speak of.
+  let coercions = null, iotaPlain = false, boundTypes = null;
+  let eraseCasts = false; // while testing for a cast rule: write x for ι(x)
+  function iota(target, arg) {
+    if (coercions) {
+      const seen = coercions.get(target) || { vars: new Set() };
+      if (arg && arg.t === 'id' && !arg.v.includes('.')) seen.vars.add(arg.v);
+      coercions.set(target, seen);
+    }
+    return iotaPlain || !target ? '\\iota' : `\\iota_{${target}}`;
+  }
+
   // `binder` is true while rendering the inside of a quantifier's "(x : T)".
   function render(items, inSet, binder, info) {
     items = mergeChains(mergePowers(items));
@@ -283,7 +318,9 @@
     const op = (s) => out.push({ s, atom: false });
     const join = (list) => list.map((e, k) => (k ? (list[k - 1].atom && e.atom ? '\\,' : ' ') : '') + e.s).join('').replace(/ ,\\;/g, ',\\;');
     // The operand of a prefix or postfix operator, without its own parentheses.
-    const inner = (node) => (!node ? '{}' : node.t === 'group' && node.open === '(' ? render(node.items) : render([node]));
+    // `(↑x : ℂ)` is a cast, not a bracketed expression: its brackets belong to it.
+    const isCast = (node) => node.t === 'group' && node.open === '(' && node.items[0]?.t === 'group' && node.items[0].open === '↑' && isSym(node.items[1], ':');
+    const inner = (node) => (!node ? '{}' : node.t === 'group' && node.open === '(' && !isCast(node) ? render(node.items) : render([node]));
     // In Lean `f x ^ 2` is `(f x) ^ 2`: a postfix applies to the whole application before it.
     const postfix = (s) => {
       let start = out.length;
@@ -315,7 +352,7 @@
     let used = 0;
     // An argument of a predicate, as a formula: brackets are kept unless they hold one term.
     const argument = (node) => {
-      if (node.t !== 'group' || node.open !== '(' || node.proj) return render([node]);
+      if (node.t !== 'group' || node.open !== '(' || node.proj || isCast(node)) return render([node]);
       const seen = {};
       const body = render(node.items, false, false, seen);
       return seen.single ? body : `\\left(${body}\\right)`;
@@ -409,9 +446,32 @@
       atom(`\\left${bracket(shape[0])}${a}, ${b}\\right${bracket(shape[1])}`);
       return i + count;
     };
+    // `(…).im`, `(…).1`, `(…).tan`: what is written after a bracket with a dot. A standard
+    // function or the real and imaginary part is applied the usual way round, tan(…); any
+    // other field stays attached to its bracket.
+    const project = (node) => {
+      if (!node.proj) return;
+      const last = out[out.length - 1];
+      const only = node.proj.length === 1 ? node.proj[0] : null;
+      const wrap = only && (Object.hasOwn(PARTS, only) ? PARTS[only] : Object.hasOwn(FUNCTIONS, only) && !FUNCTIONS[only].includes('cdot') ? FUNCTIONS[only] : null);
+      if (wrap) last.s = `${wrap}\\left(${last.bare ?? last.s}\\right)`;
+      else last.s += node.proj.map((f) => '.' + (/^\d+$/.test(f) ? f : `\\mathrm{${f.replace(/_/g, '\\_')}}`)).join('');
+      last.bare = undefined;
+    };
     for (let i = 0; i < items.length; i++) {
       const node = items[i];
-      if (node.t === 'group') {
+      if (node.t === 'group' && node.open === '↑') {
+        const said = iota('', node.items[0]);
+        if (eraseCasts) atom(`\\left(${inner(node.items[0])}\\right)`);
+        else atom(`${said}\\left(${inner(node.items[0])}\\right)`); // `↑x` with no type written
+      } else if (isCast(node)) {
+        // `(↑x : ℂ)`: x carried into ℂ by the canonical map.
+        const arg = node.items[0].items[0];
+        const inside = inner(arg);
+        const said = iota(render(node.items.slice(2)), arg);
+        atom(eraseCasts ? `\\left(${inside}\\right)` : `${said}\\left(${inside}\\right)`);
+        project(node);
+      } else if (node.t === 'group') {
         const body = render(node.items, node.open === '{', quantified && node.open !== '⟨');
         if (node.open === '(') atom(`\\left(${body}\\right)`, body);
         else if (node.open === '[') atom(`\\left[${body}\\right]`);
@@ -425,19 +485,17 @@
           if (tagged) i += 2;
         }
         else atom(`\\{ ${body} \\}`);
-        if (node.proj) {
-          // `(…).im`, `(…).1`: the projection stays attached to its bracket.
-          const last = out[out.length - 1];
-          if (node.proj.length === 1 && Object.hasOwn(PARTS, node.proj[0])) last.s = `${PARTS[node.proj[0]]}\\left(${last.bare ?? last.s}\\right)`;
-          else last.s += node.proj.map((f) => '.' + (/^\d+$/.test(f) ? f : `\\mathrm{${f.replace(/_/g, '\\_')}}`)).join('');
-          last.bare = undefined;
-        }
+        project(node);
       } else if (node.t === 'num') atom(node.v);
       else if (node.t === 'sup') postfix(`^{${node.v}}`);
       else if (node.t === 'id') {
         if (node.v === 'fun' || node.v === 'λ') continue;
         if (node.v in WORDS) op(WORDS[node.v]);
-        else if ((used = predicate(i))) i = used - 1;
+        else if (Object.hasOwn(SPACES_OF, node.v) && [...Array(SPACES_OF[node.v][0])].every((_, k) => isOperand(items[i + 1 + k])) && !isOperand(items[i + 1 + SPACES_OF[node.v][0]])) {
+          const [count, write] = SPACES_OF[node.v];
+          atom(write(...items.slice(i + 1, i + 1 + count).map(inner)));
+          i += count;
+        } else if ((used = predicate(i))) i = used - 1;
         else if (standard(node.v) === 'factorial' && isTerm(items[i + 1]) && !isTerm(items[i + 2])) {
           atom(`${render([items[++i]])}!`);
         } else if (Object.hasOwn(ONE_ARGUMENT, standard(node.v) || '') && isTerm(items[i + 1]) && !isTerm(items[i + 2])) {
@@ -478,13 +536,20 @@
         else if ((v === "''" || v === "⁻¹'") && (used = image(i, v === "''" ? '' : '^{-1}'))) i = used;
         else if (v === '⁻¹' || v === "⁻¹'") postfix('^{-1}'); // inverse; a preimage sign with nothing after it
         else if (v === 'ᶜ') postfix('^{c}');
+        else if (v === 'ˣ') postfix('^{\\times}'); // the group of units
+        else if ((v === 'ℚ' || v === 'ℤ') && isSym(items[i + 1], '_') && items[i + 2]?.t === 'group' && items[i + 2].open === '[') {
+          atom(`${ATOMS[v]}_{${render(items[i + 2].items)}}`); // the p-adic numbers and integers
+          i += 2;
+        }
         else if (v === '!' && out.length && out[out.length - 1].atom) out[out.length - 1].s += '!'; // factorial: `n !`, `(n + 1)!`
         else if (v in BIGOPS && items.slice(i + 1).some((n) => n.t === 'sym' && n.v === ',')) {
           const end = items.findIndex((n, k) => k > i && n.t === 'sym' && n.v === ',');
           op(`${BIGOPS[v]}_{${render(items.slice(i + 1, end))}}`);
           i = end;
-        } else if (v === '↑' || v === '⇑' || v === '↥') {
-          if (i + 1 >= items.length) atom('\\uparrow'); // a bare coercion; otherwise it is left out
+        } else if (v === '↑') {
+          atom('\\uparrow'); // the coercion function on its own, `(↑)`; applied, it was made a term above
+        } else if (v === '⇑' || v === '↥') {
+          if (i + 1 >= items.length) atom('\\uparrow'); // otherwise left out: `⇑f x` is just f x
         } else if (v === '@') continue;
         else if (v === ':' && (quantified || binder)) {
           const end = items.findIndex((n, k) => k > i && isComma(n));
@@ -516,7 +581,7 @@
   }
 
   const RELATION = /[=≠≤<≥>∈∉⊆⊂↔∣∀∃¬∧∨≡]/;
-  const NUMBER_SET = /^[ℕℤℚℝℂ]$/;
+  const NUMBER_SET = /^([ℕℤℚℝℂ]|[ℝℚ]≥0∞?)$/;
   const KINDS = { theorem: 'Theorem', lemma: 'Lemma', axiom: 'Axiom', def: 'Definition', abbrev: 'Abbreviation', opaque: 'Definition', instance: 'Instance' };
   const HEAD = /^(?:(?:private|protected|noncomputable|unsafe|partial|nonrec|public|scoped|local|meta)\s+)*(theorem|lemma|axiom|def|abbrev|opaque|instance)\b\s*(?:\(priority[^)]*\)\s*)?/;
 
@@ -627,12 +692,111 @@
     try { return `${expr(lhs)} := ${expr(rhs.replace(/\s+/g, ' '))}`; } catch { return null; }
   }
 
-  // Returns { kind, parts, source, thesis } or null when the statement is not one this can render.
+  // toLatex returns { kind, parts, source, thesis } or null when the statement is not one this can render.
   // `thesis` is the formula for a node: the conclusion alone; for a definition its signature;
   // for an abbreviation what it stands for, when `options.body` holds a body that is a formula.
   // `parts` alternate prose ({ text }) and formulas ({ math, display? }); `source` is LaTeX.
   // `context` is the binder text of the `variable` commands in scope, if known.
   function toLatex(statement, fullName, context, options) {
+    coercions = new Map();
+    iotaPlain = false;
+    boundTypes = new Map();
+    try {
+      let result = convert(statement, fullName, context, options);
+      if (!result || !coercions.size) return result;
+      const maps = coercions, types = boundTypes;
+      if (maps.size === 1) { // one map only: plain ι, with no subscript
+        iotaPlain = true;
+        coercions = new Map();
+        result = convert(statement, fullName, context, options);
+      }
+      return introduceMaps(result, maps, types, options);
+    } finally {
+      coercions = null;
+      iotaPlain = false;
+      boundTypes = null;
+    }
+  }
+
+  // Adds "Let ι : ℝ → ℂ be the canonical map" before the formula. Where a map starts is known
+  // when it was applied to plain variables that all have the same stated type.
+  function introduceMaps(result, maps, types, options) {
+    const startOf = (seen) => {
+      const from = new Set([...seen.vars].map((v) => types.get(v)));
+      return seen.vars.size && from.size === 1 && !from.has(undefined) ? expr([...from][0], options) : null;
+    };
+    const body = result.parts.slice(0, -1).map((p) => ({ ...p })), display = result.parts[result.parts.length - 1];
+    let closing = '. Then';
+    const last = body[body.length - 1];
+    const ends = last && 'text' in last ? /\. (Then|Write)$/.exec(last.text) : null;
+    if (ends) {
+      closing = '. ' + ends[1];
+      last.text = last.text.slice(0, ends.index);
+      if (!last.text) body.pop();
+    }
+    const text = (t) => {
+      const end = body[body.length - 1];
+      if (end && 'text' in end) end.text += t;
+      else body.push({ text: t });
+    };
+    text(body.length ? '. Let ' : 'Let ');
+    if (maps.size === 1) {
+      const [[target, seen]] = [...maps];
+      const start = startOf(seen);
+      if (target && start) { body.push({ math: `\\iota : ${start} \\to ${target}` }); text(' be the canonical map'); }
+      else if (target) { body.push({ math: '\\iota' }); text(' be the canonical map into '); body.push({ math: target }); }
+      else if (start) { body.push({ math: '\\iota' }); text(' be the canonical map from '); body.push({ math: start }); }
+      else { body.push({ math: '\\iota' }); text(' be the canonical map'); }
+    } else {
+      const targets = [...maps.keys()].filter(Boolean);
+      targets.forEach((target, k) => { if (k) text(', '); body.push({ math: `\\iota_{${target}}` }); });
+      text(' be the canonical maps into ');
+      targets.forEach((target, k) => { if (k) text(', '); body.push({ math: target }); });
+    }
+    text(closing);
+    const lines = result.source.split('\n');
+    const prose = body.map((p) => ('text' in p ? p.text : `$${p.math}$`)).join('');
+    return { ...result, parts: [...body, display], source: [lines[0], prose, lines[lines.length - 2], lines[lines.length - 1]].join('\n') };
+  }
+
+  // Whether a theorem is a cast rule: one that only moves a canonical map across an
+  // operation, like ι(r/s) = ι(r)/ι(s) or "tan of the angle of x is tan x". The test needs
+  // no convention: erase every cast, and see whether the two sides of the equation (or of
+  // the equivalence) have become the same.
+  function castRule(statement, fullName, context, options) {
+    coercions = new Map();
+    iotaPlain = true;
+    boundTypes = new Map();
+    eraseCasts = true;
+    try {
+      const result = convert(statement, fullName, context, options);
+      if (!result || !coercions.size || !/^(Theorem|Lemma)$/.test(result.kind)) return false;
+      // Split at the top level, outside every bracket and brace.
+      const split = (text, sign) => {
+        const pieces = [];
+        let depth = 0, start = 0;
+        for (let i = 0; i < text.length; i++) {
+          if (text.startsWith('\\left', i) || text[i] === '{') depth++;
+          else if (text.startsWith('\\right', i) || text[i] === '}') depth--;
+          else if (depth === 0 && text.startsWith(sign, i)) { pieces.push(text.slice(start, i)); start = i + sign.length; i = start - 1; }
+        }
+        return [...pieces, text.slice(start)];
+      };
+      const bare = (text) => text.replace(/\\left|\\right|\\,|[(){}\s]/g, '');
+      const whole = result.thesis;
+      const sides = split(whole, ' \\iff ').length === 2 ? split(whole, ' \\iff ') : split(whole, ' = ');
+      return sides.length === 2 && bare(sides[0]) !== '' && bare(sides[0]) === bare(sides[1]);
+    } catch {
+      return false;
+    } finally {
+      coercions = null;
+      iotaPlain = false;
+      boundTypes = null;
+      eraseCasts = false;
+    }
+  }
+
+  function convert(statement, fullName, context, options) {
     french = !!options && options.notation === 'fr';
     geometry = /^EuclideanGeometry\./.test(String(fullName || ''));
     complex = /^Complex\./.test(String(fullName || ''));
@@ -702,6 +866,7 @@
         const dflt = topLevel(type, ':=');
         if (dflt >= 0) type = type.slice(0, dflt); // drop a default value
         type = type.trim();
+        if (type && boundTypes) names.forEach((n) => boundTypes.set(n, type));
         if (!type) {
           // `variable (V)` after `{V : Type*}` only makes V an explicit argument: nothing new to introduce.
           const fresh = names.filter((n) => !typed.has(n));
@@ -714,7 +879,7 @@
         // Hypotheses are usually called h, hx, h₁ … or given a descriptive name such as f_mble.
         const named = names.every((n) => /^h[\p{L}\p{N}_'₀-₉]*$/u.test(n) || n.includes('_')) && !NUMBER_SET.test(type) && !/^Prop\b/.test(type);
         // The ≥ in the names ℝ≥0 and ℝ≥0∞ is part of the name, not a relation.
-        if (hasTopLevel(type.replace(/ℝ≥0∞?/g, 'ℝ'), RELATION) || named) hyps.push(expr(type));
+        if (hasTopLevel(type.replace(/[ℝℚ]≥0∞?/g, 'ℝ'), RELATION) || named) hyps.push(expr(type));
         else {
           const typeItems = nest(lex(type));
           const shown = names.map(ident).join(', ');
@@ -791,5 +956,5 @@
     }
   }
 
-  return { expr, toLatex };
+  return { expr, toLatex, castRule };
 });

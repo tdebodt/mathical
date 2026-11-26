@@ -1,6 +1,6 @@
 const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
-const { open, search, neighborhood } = require('../lib/graphdb');
+const { open, search, neighborhood, facts } = require('../lib/graphdb');
 const { buildFixtureDb } = require('./helpers');
 
 let db;
@@ -153,4 +153,10 @@ test('hidePlumbing also leaves out inheritance projections such as Ring.toSemiri
   assert.deepEqual(tidy.out.hidden, [1]);
   assert.equal(tidy.out.nodes[0].parent, null);
   assert.equal(neighborhood(db, 'UsesRing').out.nodes[0].parent, 'Semiring');
+});
+
+test('facts keeps the theorems that are steps of an argument, in the order given', () => {
+  // Hub is a definition, Eq.mpr is Lean plumbing, Ghost has no kind, Nope does not exist
+  assert.deepEqual(facts(db, ['B', 'Hub', 'A', 'Eq.mpr', 'Ghost', 'Nope', 'A']), ['B', 'A']);
+  assert.deepEqual(facts(db, []), []);
 });
