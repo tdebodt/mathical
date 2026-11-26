@@ -6,6 +6,7 @@ const path = require('node:path');
 const { LeanStatements, statementFrom } = require('../lib/lean');
 
 const fake = path.join(__dirname, 'fixtures', 'fake-lean.js');
+const fakeSteps = path.join(__dirname, 'fixtures', 'fake-steps.js');
 const tmp = () => path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'mathical-lean-')), 'cache.db');
 const start = (mode = 'ok', cachePath = tmp()) =>
   new LeanStatements({ cachePath, command: process.execPath, args: [fake, mode] });
@@ -88,4 +89,31 @@ test('whether a theorem is proved by reflexivity is asked once and remembered', 
   const offline = new LeanStatements({ cachePath, command: process.execPath, args: [fake, 'dies'] });
   assert.deepEqual(await offline.roles(['A', 'Nope', 'B']), { A: { rfl: true } });
   await offline.close();
+});
+
+test('the steps of a proof: a separate run of Lean on the source file, remembered afterwards', async () => {
+  const cachePath = tmp();
+  const lean = new LeanStatements({ cachePath, command: process.execPath, args: [fake], stepsArgs: [fakeSteps, 'ok'] });
+  const steps = await lean.steps('Thm', 'Mathlib/Sample.lean');
+  assert.equal(steps.length, 4);
+  assert.equal(steps[0].text, 'add_zero');
+  assert.equal(await lean.steps('Nope', 'Mathlib/Sample.lean'), null); // Lean ran and found nothing
+  assert.equal(lean.state, 'idle'); // the session that answers statements was not needed
+  await lean.close();
+  // remembered: no Lean needed the second time, and "nothing" is remembered too
+  const later = new LeanStatements({ cachePath });
+  assert.equal((await later.steps('Thm', 'Mathlib/Sample.lean')).length, 4);
+  assert.equal(await later.steps('Nope', 'Mathlib/Sample.lean'), null);
+  assert.equal(await later.steps('Other', 'Mathlib/Sample.lean'), undefined); // not known, and no Lean to ask
+  await later.close();
+});
+
+test('the steps of a proof: a run that fails is not remembered', async () => {
+  const cachePath = tmp();
+  const broken = new LeanStatements({ cachePath, command: process.execPath, args: [fake], stepsArgs: [fakeSteps, 'dies'] });
+  assert.equal(await broken.steps('Thm', 'Mathlib/Sample.lean'), undefined);
+  await broken.close();
+  const fixed = new LeanStatements({ cachePath, command: process.execPath, args: [fake], stepsArgs: [fakeSteps, 'ok'] });
+  assert.equal((await fixed.steps('Thm', 'Mathlib/Sample.lean')).length, 4);
+  await fixed.close();
 });

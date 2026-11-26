@@ -5,6 +5,7 @@ const { open, search, neighborhood, facts } = require('./lib/graphdb');
 const { locate, localSource, modulePath } = require('./lib/leansource');
 const { LeanStatements } = require('./lib/lean');
 const { toLatex } = require('./public/lean-latex.js');
+const { arrange } = require('./lib/steps');
 
 const GITHUB = 'https://github.com/leanprover-community/mathlib4/blob/master/';
 const RAW = 'https://raw.githubusercontent.com/leanprover-community/mathlib4/master/';
@@ -89,6 +90,26 @@ function createServer(dbPath, { fetchSource = fetchFromGitHub, lean = null } = {
       .map((r) => r.name);
     const { path: foundIn, ...rest } = decl;
     return { found: true, ...rest, deps, url: `${GITHUB}${foundIn}#L${decl.line}` };
+  };
+
+  // The proof of `name` step by step, as Lean sees it: what is to be proved, and after each
+  // step what is left. Lean has to check the source file again, so the first answer for a
+  // declaration is slow.
+  const stepsOf = async (name) => {
+    const node = db.prepare('SELECT file_module FROM nodes WHERE name = ?').get(name);
+    if (!node) return null;
+    if (!lean) return { found: false, reason: 'no_lean' };
+    const filePath = modulePath(node.file_module);
+    let file = filePath;
+    try {
+      const decl = filePath ? await locate(sourceText, filePath, name) : null;
+      if (decl && !decl.missing) file = decl.path;
+    } catch { /* keep the file the graph names */ }
+    if (!file) return { found: false, reason: 'no_source_file' };
+    const recorded = await lean.steps(name, file);
+    if (recorded === undefined) return { found: false, reason: 'no_lean' };
+    const proof = arrange(recorded);
+    return proof && proof.steps.length ? { found: true, proof } : { found: false, reason: 'no_steps' };
   };
 
   // For the declaration `focus`: of the `dependencies` given, which its statement mentions,
@@ -229,6 +250,14 @@ function createServer(dbPath, { fetchSource = fetchFromGitHub, lean = null } = {
       }
       if (pathname === '/api/lean') return json(res, 200, { state: lean ? lean.state : 'off' });
       if (pathname === '/api/elaborate') return json(res, 405, { error: 'method not allowed' }); // POST only
+      if (pathname === '/api/steps') {
+        const name = params.get('name');
+        if (!name) return json(res, 400, { error: 'name is required' });
+        return stepsOf(name).then(
+          (result) => (result ? json(res, 200, result) : json(res, 404, { error: 'not found' })),
+          (err) => { console.error(err); json(res, 500, { error: 'internal error' }); }
+        );
+      }
       if (pathname === '/api/source') {
         const name = params.get('name');
         if (!name) return json(res, 400, { error: 'name is required' });
@@ -273,6 +302,7 @@ if (require.main === module) {
     cachePath: path.join(__dirname, 'data', 'lean-cache.v3.db'), // v3: scoped notation on, coercions printed with their type
     command: compiled ? (fs.existsSync(path.join(elan, 'lake')) ? path.join(elan, 'lake') : 'lake') : null,
     args: ['env', 'lean', '--run', path.join(__dirname, 'lean', 'Signatures.lean')],
+    stepsArgs: ['env', 'lean', '--run', path.join(__dirname, 'lean', 'Steps.lean')],
     cwd: checkout,
     env: { ...process.env, PATH: `${elan}${path.delimiter}${process.env.PATH || ''}` },
   });

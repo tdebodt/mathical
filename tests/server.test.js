@@ -285,3 +285,46 @@ test('without Lean: the roles endpoint answers empty', async () => {
   const got = await (await fetch(base + '/api/roles', { method: 'POST', body: JSON.stringify({ names: ['Thm'] }) })).json();
   assert.deepEqual(got, { state: 'off', roles: {} });
 });
+
+test('with Lean: the steps of a proof, each with what it leaves to prove', async () => {
+  const fs = require('node:fs'), os = require('node:os'), path = require('node:path');
+  const { LeanStatements } = require('../lib/lean');
+  const { localSource } = require('../lib/leansource');
+  const dbPath = dbPathForSource;
+  const cachePath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'mathlib-graph-')), 'lean.db');
+  const fixtures = path.join(__dirname, 'fixtures');
+  const lean = new LeanStatements({
+    cachePath, command: process.execPath, args: [path.join(fixtures, 'fake-lean.js')], stepsArgs: [path.join(fixtures, 'fake-steps.js'), 'ok'],
+  });
+  const server = createServer(dbPath, { fetchSource: localSource(path.join(fixtures, 'src')), lean });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  try {
+    const got = await (await fetch(`${base}/api/steps?name=Thm`)).json();
+    assert.equal(got.found, true);
+    assert.equal(got.proof.goal, 'n + 0 = n');
+    assert.deepEqual(got.proof.steps.map((s) => [s.text, s.results[0].target, s.closes]), [['add_zero', 'n = n', true]]);
+    assert.deepEqual(await (await fetch(`${base}/api/steps?name=Hub`)).json(), { found: false, reason: 'no_steps' });
+    assert.equal((await fetch(`${base}/api/steps?name=Missing`)).status, 404);
+    assert.equal((await fetch(`${base}/api/steps`)).status, 400);
+  } finally {
+    await new Promise((resolve) => server.close(resolve)); // closes Lean too
+  }
+});
+
+test('without Lean: no steps, and the page is told why', async () => {
+  const fs = require('node:fs'), os = require('node:os'), path = require('node:path');
+  const { LeanStatements } = require('../lib/lean');
+  const { localSource } = require('../lib/leansource');
+  const dbPath = dbPathForSource;
+  const cachePath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'mathlib-graph-')), 'lean.db');
+  const lean = new LeanStatements({ cachePath });
+  const server = createServer(dbPath, { fetchSource: localSource(path.join(__dirname, 'fixtures', 'src')), lean });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  try {
+    const got = await (await fetch(`http://127.0.0.1:${server.address().port}/api/steps?name=Thm`)).json();
+    assert.deepEqual(got, { found: false, reason: 'no_lean' });
+  } finally {
+    await new Promise((resolve) => server.close(resolve)); // closes Lean too
+  }
+});

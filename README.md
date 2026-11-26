@@ -54,6 +54,14 @@ gets its statements in a fraction of a second. The top bar shows "Lean: ready".
   rests on a single other result, one that is specific and has an argument of its own.
   **restates**: it says the same as the one result it rests on. **hide bookkeeping**
   hides the first two kinds.
+- With Lean, the proof panel has a **Steps** view: every step of the proof as Lean sees
+  it, with what is left to prove after it and what became known. `rw [a, b, c]` is shown
+  rule by rule; cases are indented under the step that split them. Lean only knows these
+  goals while it checks a proof, so `lean/Steps.lean` checks the source file again up to
+  that declaration: 2 to 5 seconds for the files tried, up to a minute for a long one,
+  once per declaration (the answer is kept in the Lean cache). A step such as `simp` or
+  `linarith` works inside; only its outcome is shown. A proof written as one expression
+  has no steps.
 - Without Lean, nothing else changes: statements come from the source text.
 
 ## Using it
@@ -184,6 +192,8 @@ node --disable-warning=ExperimentalWarning --test
 | `lib/reach.js` | Counts each declaration's direct and indirect dependents |
 | `lib/lean.js` | Runs Lean, asks it for statements, remembers the answers |
 | `lean/Signatures.lean` | The Lean program that prints a declaration's full statement |
+| `lean/Steps.lean` | The Lean program that checks a source file again and records the steps of one proof |
+| `lib/steps.js` | Chooses, from what Lean recorded, the steps to show and what each one changed |
 | `server.js` | `/api/search`, `/api/node`, and the page |
 | `public/index.html` | The whole interface |
 | `public/lean.js` | Lean syntax colouring and dependency links |

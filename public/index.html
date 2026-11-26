@@ -73,8 +73,22 @@
   #proof .name { font: 12.5px var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
   #proof .spacer { flex: 1; }
   #proof pre { margin: 0; padding: 12px 16px; font: 12.5px/1.55 var(--mono); white-space: pre; overflow: auto; tab-size: 2; min-height: 0; }
-  #proof.collapsed pre, #proof.collapsed #proof-outline { display: none; }
-  #proof pre[hidden], #proof-outline[hidden] { display: none; }
+  #proof.collapsed pre, #proof.collapsed #proof-outline, #proof.collapsed #proof-steps { display: none; }
+  #proof pre[hidden], #proof-outline[hidden], #proof-steps[hidden] { display: none; }
+  #proof-steps { padding: 10px 16px 14px; overflow: auto; min-height: 0; font-size: 13.5px; line-height: 1.6; }
+  #proof-steps .open { display: flex; align-items: baseline; gap: 8px; margin: 2px 0; }
+  #proof-steps .srow { display: grid; grid-template-columns: minmax(120px, 30%) 1fr; gap: 14px; align-items: baseline; padding: 6px 0; border-top: 1px solid var(--line); }
+  #proof-steps .srow.case { border-top: 0; padding-top: 8px; }
+  #proof-steps .how { font: 12px/1.5 var(--mono); overflow-wrap: anywhere; }
+  #proof-steps .how .verb { font: 12px var(--sans); }
+  #proof-steps .verb { color: var(--muted); white-space: nowrap; }
+  #proof-steps .label { font: 11.5px var(--mono); color: var(--accent); white-space: nowrap; }
+  #proof-steps .what { min-width: 0; }
+  #proof-steps .line { display: flex; align-items: baseline; gap: 8px; }
+  #proof-steps .formula { min-width: 0; overflow-x: auto; overflow-y: hidden; }
+  #proof-steps .formula code { font: 12px var(--mono); }
+  #proof-steps .done { color: var(--muted); }
+  #proof-steps .about, #proof-steps .wait { color: var(--muted); font-size: 12.5px; }
   #proof-outline { padding: 10px 16px 14px; overflow: auto; min-height: 0; font-size: 13.5px; line-height: 1.6; }
   #proof-outline .step { display: flex; align-items: baseline; gap: 8px; margin: 3px 0; }
   #proof-outline .verb { color: var(--muted); white-space: nowrap; }
@@ -262,11 +276,12 @@
       <span class="hint" id="proof-hint" aria-live="polite"></span>
       <span class="spacer"></span>
       <span class="seg" id="proof-view" role="group" aria-label="How to show the proof" hidden>
-        <button type="button" data-v="outline" title="The steps of the argument: its intermediate claims, typeset, with the author's comments">Outline</button><button type="button" data-v="lean" title="The proof as written, in Lean">Lean</button>
+        <button type="button" data-v="outline" title="The steps of the argument: its intermediate claims, typeset, with the author's comments">Outline</button><button type="button" data-v="steps" title="Every step of the proof with what is left to prove after it, as Lean sees it. Lean checks the source file again for this: a few seconds to a minute the first time.">Steps</button><button type="button" data-v="lean" title="The proof as written, in Lean">Lean</button>
       </span>
       <button type="button" id="proof-toggle" aria-expanded="true">Hide</button>
     </header>
     <div id="proof-outline" tabindex="0" hidden></div>
+    <div id="proof-steps" tabindex="0" hidden></div>
     <pre tabindex="0"><code id="proof-code"></code></pre>
   </section>
   <aside>
@@ -768,10 +783,10 @@ function renderLean(code, deps, focusName) {
 
 // ---------- the argument ----------
 // A Lean expression typeset; when the converter or the typesetter cannot, the Lean text itself.
-function formula(lean) {
+function formula(lean, full) {
   const box = h('span', { className: 'formula' });
   try {
-    katex.render(LeanLatex.expr(lean, { notation: notation() }), box, { displayMode: false, throwOnError: true, strict: false });
+    katex.render((full ? '\\displaystyle ' : '') + LeanLatex.expr(lean, { notation: notation() }), box, { displayMode: false, throwOnError: true, strict: false });
   } catch { box.replaceChildren(h('code', { textContent: lean })); }
   return box;
 }
@@ -806,12 +821,78 @@ function drawProof() {
   if (!p) return;
   const steps = window.LeanOutline ? LeanOutline.outline(p.body) : [];
   const telling = steps.some((s) => TELLING.has(s.kind));
-  const view = telling && proofView !== 'lean' ? 'outline' : 'lean';
-  $('proof-view').hidden = !telling;
-  for (const b of $('proof-view').children) b.setAttribute('aria-pressed', String(b.dataset.v === view));
+  // Steps come from Lean and only exist for a proof; the outline only when it tells something.
+  const stepwise = p.title === 'Proof' && leanIs !== 'off';
+  const view = proofView === 'steps' && stepwise ? 'steps' : telling && proofView !== 'lean' ? 'outline' : 'lean';
+  $('proof-view').hidden = !telling && !stepwise;
+  for (const b of $('proof-view').children) {
+    b.setAttribute('aria-pressed', String(b.dataset.v === view));
+    b.hidden = (b.dataset.v === 'outline' && !telling) || (b.dataset.v === 'steps' && !stepwise);
+  }
   $('proof-outline').hidden = view !== 'outline';
-  $('proof').querySelector('pre').hidden = view === 'outline';
+  $('proof-steps').hidden = view !== 'steps';
+  $('proof').querySelector('pre').hidden = view !== 'lean';
   if (view === 'outline') { $('proof-outline').replaceChildren(...renderOutline(steps)); $('proof-outline').scrollTop = 0; }
+  if (view === 'steps') showSteps(p);
+}
+
+// ---------- the proof step by step, as Lean sees it ----------
+const stepsFor = new Map(); // name -> promise of the server's answer
+const NO_STEPS = {
+  no_lean: 'Lean is not available, so the steps cannot be computed.',
+  no_steps: 'Lean recorded no steps here: this proof is written as a single expression, not as a sequence of steps.',
+  no_source_file: 'This declaration has no source file to check.',
+};
+async function showSteps(p) {
+  const box = $('proof-steps');
+  if (box.dataset.name === p.name && box.dataset.notation === notation()) return; // already there
+  box.dataset.name = p.name;
+  box.dataset.notation = notation();
+  box.replaceChildren(h('p', { className: 'wait', textContent: 'Lean is checking the source file again to record each step. The first time takes from a few seconds to a minute; after that it is remembered.' }));
+  if (!stepsFor.has(p.name)) {
+    stepsFor.set(p.name, fetch('/api/steps?name=' + encodeURIComponent(p.name)).then((r) => (r.ok ? r.json() : Promise.reject(new Error('failed')))));
+    stepsFor.get(p.name).catch(() => stepsFor.delete(p.name));
+  }
+  let got;
+  try { got = await stepsFor.get(p.name); } catch { got = { found: false, reason: 'failed' }; }
+  if (shownProof !== p || box.dataset.name !== p.name) return; // the reader moved on
+  if (!got.found) { box.replaceChildren(h('p', { className: 'about', textContent: NO_STEPS[got.reason] || 'The steps could not be computed.' })); return; }
+  box.replaceChildren(...renderSteps(got.proof, p));
+  box.scrollTop = 0;
+}
+// A hypothesis or a variable, as a line: its name, then what it says.
+const variable = (x) => formula(/→|^(Type|Sort|Prop)\b/.test(x.type) ? `${x.name} : ${x.type}` : `${x.name} ∈ ${x.type}`);
+const known = (x) => (x.prop ? h('span', { className: 'line' }, h('span', { className: 'label', textContent: x.name }), formula(x.type, true)) : variable(x));
+function renderSteps(proof, p) {
+  const out = [];
+  const objects = proof.given.filter((x) => !x.prop), facts = proof.given.filter((x) => x.prop);
+  if (objects.length) out.push(h('div', { className: 'open' }, h('span', { className: 'verb', textContent: 'given' }), ...objects.map(variable)));
+  for (const x of facts) out.push(h('div', { className: 'open' }, h('span', { className: 'verb', textContent: 'assuming' }), known(x)));
+  if (proof.goal) out.push(h('div', { className: 'open' }, h('span', { className: 'verb', textContent: 'to prove' }), formula(proof.goal, true)));
+  for (const s of proof.steps) {
+    const row = h('div', { className: 'srow ' + s.kind });
+    row.style.paddingLeft = s.depth * 22 + 'px';
+    const how = h('div', { className: 'how' });
+    if (s.kind === 'case') how.append(h('span', { className: 'verb', textContent: 'case' }));
+    else {
+      if (s.rewrite) how.append(h('span', { className: 'verb', textContent: s.at ? `rewrite ${s.at} with ` : 'rewrite with ' }));
+      how.append(renderLean(s.text, p.deps, p.name));
+    }
+    const what = h('div', { className: 'what' });
+    const many = s.results.length > 1;
+    s.results.forEach((r, i) => {
+      for (const x of r.learned) what.append(h('div', { className: 'line' }, h('span', { className: 'verb', textContent: x.prop ? 'now' : 'with' }), known(x)));
+      if (r.target !== null) what.append(h('div', { className: 'line' },
+        h('span', { className: 'verb', textContent: s.kind === 'case' ? 'to prove' : many ? `case ${i + 1}:` : 'left to prove' }), formula(r.target, true)));
+    });
+    if (s.closes) what.append(h('div', { className: 'done', textContent: s.rewrite && s.results.length ? 'both sides are the same: done ∎' : 'done ∎' }));
+    else if (!s.results.length && s.kind !== 'case') what.append(h('div', { className: 'done', textContent: 'nothing changes' }));
+    row.append(how, what);
+    out.push(row);
+  }
+  out.push(h('p', { className: 'about', textContent:
+    'Recorded by Lean while checking the proof: after each step, what is left to prove and what became known. A step such as simp or linarith does its work inside; only its outcome is shown.' }));
+  return out;
 }
 $('proof-view').onclick = (e) => {
   if (!e.target.dataset.v) return;
@@ -824,7 +905,7 @@ $('proof-view').onclick = (e) => {
 function showProof(p) {
   const panel = $('proof'), wasHidden = panel.hidden;
   panel.hidden = !p;
-  if (!p) { $('proof-code').replaceChildren(); $('proof-outline').replaceChildren(); shownProof = null; }
+  if (!p) { $('proof-code').replaceChildren(); $('proof-outline').replaceChildren(); $('proof-steps').replaceChildren(); delete $('proof-steps').dataset.name; shownProof = null; }
   if (p) {
     $('proof-title').textContent = p.title;
     $('proof-name').textContent = p.name;
@@ -1011,7 +1092,11 @@ function drawPanel(data) {
 // the server starts; the page works from the source text meanwhile.
 const LEAN_KINDS = new Set(['theorem', 'definition', 'abbrev', 'opaque', 'axiom']);
 const onScreen = (data) => [data.focus, ...data.out.nodes, ...data.in.nodes];
+let leanIs = 'off'; // until the server says otherwise
 function showLean(state) {
+  const was = leanIs;
+  leanIs = state || 'off';
+  if (was !== leanIs && shownProof) drawProof(); // the Steps view depends on Lean
   const label = { ready: 'Lean: ready', starting: 'Lean: loading Mathlib…', idle: 'Lean: idle', off: 'Lean: off' }[state] || '';
   $('leanstate').textContent = label;
   $('leanstate').title = state === 'off'
