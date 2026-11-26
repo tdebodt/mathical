@@ -93,6 +93,9 @@
   #proof-steps .formula { min-width: 0; overflow-x: auto; overflow-y: hidden; }
   #proof-steps .formula code { font: 12px var(--mono); }
   #proof-steps .done { color: var(--muted); }
+  #proof-steps .srow[hidden] { display: none; }
+  #proof-steps .srow.inrun { background: color-mix(in srgb, var(--line) 30%, transparent); }
+  #proof-steps .srow.run .linklike { font: 12px var(--sans); margin-top: 2px; cursor: pointer; }
   #proof-steps .acase { border-left: 2px solid var(--line); padding-left: 10px; margin: 2px 0 8px; }
   #proof-steps .acase:last-child { margin-bottom: 0; }
   #proof-steps .casehead { font: 600 11.5px var(--sans); color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
@@ -906,25 +909,8 @@ function renderSteps(proof, p, cited) {
   if (objects.length) out.push(h('div', { className: 'open' }, h('span', { className: 'verb', textContent: 'given' }), ...objects.map(variable)));
   for (const x of facts) out.push(h('div', { className: 'open' }, h('span', { className: 'verb', textContent: 'assuming' }), known(x)));
   if (proof.goal) out.push(h('div', { className: 'open' }, h('span', { className: 'verb', textContent: 'to prove' }), formula(proof.goal, true)));
-  for (const s of proof.steps) {
-    const row = h('div', { className: 'srow ' + s.kind });
-    row.style.paddingLeft = s.depth * 22 + 'px';
-    const how = h('div', { className: 'how' });
-    if (s.kind === 'case') how.append(h('span', { className: 'casehead', textContent: s.label ? `case ${s.label}` : 'case' }));
-    else {
-      if (s.rewrite) how.append(h('span', { className: 'verb', textContent: `rewrite ${s.at ? s.at + ' ' : ''}with ` }));
-      // In words when there are words for it, with what was written to Lean small beneath.
-      if (s.says) how.append(h('div', { className: 'says', textContent: s.says }));
-      how.append(h(s.says ? 'div' : 'span', { className: 'lean' }, renderLean(s.text, p.deps, p.name)));
-    }
-    // What each cited result says, under the step that names it.
-    let directed = false; // whether a line under the step already shows which way the rule is used
-    if (s.kind !== 'case') for (const name of (s.cites || []).slice(0, 3)) {
-      const line = citation(name, cited[name], s.cites.length > 1, s);
-      if (line) how.append(line);
-      if (line && line.dataset.turned) directed = true;
-    }
-    if (s.backwards && !directed) how.append(h('div', { className: 'line cite' }, h('span', { className: 'label', textContent: 'used from right to left: its right-hand side is replaced by its left-hand side' })));
+  // What a step leaves: what became known, and what is left to prove.
+  const outcome = (s) => {
     const what = h('div', { className: 'what' });
     const many = s.results.length > 1;
     s.results.forEach((r, i) => {
@@ -937,11 +923,61 @@ function renderSteps(proof, p, cited) {
     });
     if (s.closes) what.append(h('div', { className: 'done', textContent: s.rewrite && s.results.length ? 'both sides are the same: done ∎' : 'done ∎' }));
     else if (!s.results.length && s.kind !== 'case') what.append(h('div', { className: 'done', textContent: 'nothing changes' }));
-    row.append(how, what);
+    return what;
+  };
+  // Rewrites one after the other on the same thing are folded into one row: where the run
+  // ends, and the results it used. Its steps are a click away.
+  const runs = new Map();
+  for (const s of proof.steps) if (s.run) runs.set(s.run, [...(runs.get(s.run) || []), s]);
+  const folded = (members) => {
+    const first = members[0], last = members[members.length - 1];
+    const row = h('div', { className: 'srow run' });
+    row.style.paddingLeft = first.depth * 22 + 'px';
+    const using = h('div', { className: 'lean' }, 'using ');
+    members.forEach((m, i) => using.append(i ? ', ' : '', renderLean(m.text, p.deps, p.name)));
+    const toggle = h('button', { type: 'button', className: 'linklike', textContent: `show the ${members.length} steps` });
+    toggle.setAttribute('aria-expanded', 'false');
+    toggle.onclick = () => {
+      const open = toggle.getAttribute('aria-expanded') !== 'true';
+      toggle.setAttribute('aria-expanded', String(open));
+      toggle.textContent = open ? `hide the ${members.length} steps` : `show the ${members.length} steps`;
+      for (const el of row.parentElement.querySelectorAll(`.srow[data-run="${first.run}"]`)) el.hidden = !open;
+    };
+    row.append(h('div', { className: 'how' },
+      h('div', { className: 'says', textContent: `rewrite ${first.at || 'what is to prove'}, in ${members.length} steps` }), using, toggle), outcome(last));
+    return row;
+  };
+  for (const s of proof.steps) {
+    const inRun = s.run && runs.get(s.run).length > 1;
+    if (inRun && runs.get(s.run)[0] === s) out.push(folded(runs.get(s.run)));
+    const row = h('div', { className: 'srow ' + s.kind + (inRun ? ' inrun' : '') });
+    if (inRun) { row.dataset.run = s.run; row.hidden = true; }
+    row.style.paddingLeft = s.depth * 22 + 'px';
+    const how = h('div', { className: 'how' });
+    if (s.kind === 'case') {
+      how.append(h('span', { className: 'casehead', textContent: s.label ? `case ${s.label}` : 'case' }));
+      if (s.implied) how.append(h('div', { className: 'lean', textContent: 'not marked in the Lean proof' }));
+    } else {
+      if (s.rewrite) how.append(h('span', { className: 'verb', textContent: `rewrite ${s.at ? s.at + ' ' : ''}with ` }));
+      // In words when there are words for it, with what was written to Lean small beneath.
+      if (s.says) how.append(h('div', { className: 'says', textContent: s.says }));
+      how.append(h(s.says ? 'div' : 'span', { className: 'lean' }, renderLean(s.text, p.deps, p.name)));
+    }
+    // What each cited result says, under the step that names it.
+    let directed = false; // whether a line under the step already shows which way the rule is used
+    if (s.kind !== 'case') for (const name of (s.cites || []).slice(0, 3)) {
+      const line = citation(name, cited[name], s.cites.length > 1, s);
+      if (line) how.append(line);
+      if (line && line.dataset.turned) directed = true;
+    }
+    if (s.rewrite && s.cites.length === 1 && cited[s.cites[0]] && window.LeanLatex && LeanLatex.castRule(cited[s.cites[0]], s.cites[0], ''))
+      how.append(h('div', { className: 'line cite' }, h('span', { className: 'label', title: 'This rule only moves a canonical map through an operation; it carries no idea of the proof', textContent: 'bookkeeping: moves a map through an operation' })));
+    if (s.backwards && !directed) how.append(h('div', { className: 'line cite' }, h('span', { className: 'label', textContent: 'used from right to left: its right-hand side is replaced by its left-hand side' })));
+    row.append(how, outcome(s));
     out.push(row);
   }
   out.push(h('p', { className: 'about', textContent:
-    'Recorded by Lean while checking the proof: after each step, what is left to prove and what became known. A step marked automatic does its work inside; only its outcome is shown. A result that a step cites is shown by its conclusion alone; its conditions are on its own page. A rule that a step uses from right to left is written with its two sides exchanged, so a rewrite always turns the left side into the right side.' }));
+    'Recorded by Lean while checking the proof: after each step, what is left to prove and what became known. Rewrites that follow one another on the same thing are folded into one row; its steps open with a click. A step marked automatic does its work inside; only its outcome is shown. A result that a step cites is shown by its conclusion alone; its conditions are on its own page. A rule that a step uses from right to left is written with its two sides exchanged, so a rewrite always turns the left side into the right side.' }));
   return out;
 }
 $('proof-view').onclick = (e) => {

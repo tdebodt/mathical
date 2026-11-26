@@ -142,6 +142,45 @@ test('cases inside a case are numbered under it: 1.1, 1.2, so two "case 1" are n
   assert.equal(proof.steps.find((s) => s.text === 'exact y').within, '1.2');
 });
 
+test('a case the proof does not mark gets its heading all the same, from the goal Lean works on', () => {
+  const g = goal('g', 'a ↔ b'), l = goal('l', 'a → b'), r = goal('r', 'b → a');
+  const r1 = goal('r1', 'a', [['x', 'ℝ'], ['h', 'b', true]]);
+  const proof = arrange([
+    step(0, 11, 'Lean.Parser.Tactic.constructor', 'constructor', [g], [l, r]),
+    step(12, 13, 'Lean.cdotTk', '·', [l, r], [l]),
+    step(14, 21, 'Lean.Parser.Tactic.exact', 'exact f', [l], []),
+    step(12, 21, 'Lean.cdot', '· exact f', [l, r], [r]),
+    step(22, 29, 'Lean.Parser.Tactic.intro', 'intro h', [r], [r1]),
+    step(30, 37, 'Lean.Parser.Tactic.exact', 'exact k', [r1], []),
+    step(0, 37, 'Lean.Parser.Term.byTactic', 'by …', [g], []),
+  ]);
+  assert.deepEqual(proof.steps.map((s) => [s.kind, s.depth, s.kind === 'case' ? s.label : s.text]), [
+    ['step', 0, 'constructor'], ['case', 0, '1'], ['step', 1, 'exact f'],
+    ['case', 0, '2'], ['step', 1, 'intro h'], ['step', 1, 'exact k'],
+  ]);
+  const added = proof.steps[3];
+  assert.equal(added.implied, true); // the proof has no marker here
+  assert.deepEqual(added.results, [{ target: 'b → a', learned: [] }]);
+  assert.equal(proof.steps[1].implied, undefined);
+  assert.equal(proof.steps[5].within, '2');
+});
+
+test('rewrites one after the other on the same thing form a run, which the page can fold', () => {
+  const g0 = goal('g0', 'A', [['h', 'p', true]]), g1 = goal('g1', 'B', [['h', 'p', true]]), g2 = goal('g2', 'C', [['h', 'p', true]]);
+  const g3 = goal('g3', 'C', [['h', 'q', true]]), g4 = goal('g4', 'D', [['h', 'q', true]]);
+  const proof = arrange([
+    step(4, 5, 'null', 'a', [g0], [g1]), step(7, 8, 'null', 'b', [g1], [g2]), step(8, 9, '«]»', ']', [g2], [g2]),
+    step(0, 9, 'Lean.Parser.Tactic.rwSeq', 'rw [a, b]', [g0], [g2]),
+    step(14, 15, 'null', 'c', [g2], [g3]), step(15, 16, '«]»', ']', [g3], [g3]),
+    step(10, 21, 'Lean.Parser.Tactic.rwSeq', 'rw [c] at h', [g2], [g3]),
+    step(26, 27, 'null', 'd', [g3], [g4]), step(27, 28, '«]»', ']', [g4], [g4]),
+    step(22, 28, 'Lean.Parser.Tactic.rwSeq', 'rw [d]', [g3], [g4]),
+    step(29, 36, 'Lean.Parser.Tactic.exact', 'exact z', [g4], []),
+  ]);
+  // a and b rewrite the goal, c rewrites h, d the goal again: three runs; exact is in none
+  assert.deepEqual(proof.steps.map((s) => [s.text, s.run]), [['a', 1], ['b', 1], ['c', 2], ['d', 3], ['exact z', undefined]]);
+});
+
 // ---------- each step said in plain words ----------
 const said = (kind, text, before, after) => arrange([step(0, Buffer.byteLength(text), kind, text, before, after)]).steps[0].says;
 

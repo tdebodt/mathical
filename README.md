@@ -73,6 +73,13 @@ gets its statements in a fraction of a second. The top bar shows "Lean: ready".
   an integral the type is left out, as before. A canonical map applied to such a variable
   is introduced with its source ("Let ι : ℤ → ℝ be the canonical map"); where a conclusion
   stands alone, as under a step, the map carries where it lands (ι_ℝ).
+- In the Steps view, cases are numbered under the case they sit in (1, 1.1, 1.2, 2) and
+  each opens with what is known in it. The numbering follows the goals Lean recorded,
+  not the proof's bullets, so a case the proof starts without marking it still gets its
+  heading ("not marked in the Lean proof"). Rewrites that follow one another on the
+  same thing are folded into one row showing where the run ends and the results it
+  used; its steps open with a click. A rewrite that only moves a canonical map through
+  an operation is labelled bookkeeping.
 - With Lean, the proof panel has a **Steps** view: every step of the proof as Lean sees
   it, with what is left to prove after it and what became known. `rw [a, b, c]` is shown
   rule by rule; cases are indented under the step that split them. Lean only knows these
