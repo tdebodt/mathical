@@ -256,6 +256,9 @@
   let geometry = false;
   // Set while converting a statement from the Complex namespace, where a bare `I` is the imaginary unit.
   let complex = false;
+  // The namespace of the statement being converted when it fixes which number system a bare
+  // `cos` or `exp` lives in: 'Real', 'Complex', 'NNReal', or '' when it does not.
+  let home = '';
   // Set while converting with French / Belgian conventions: the angle ABC under a hat,
   // open interval ends as outward brackets, slanted ≤ and ≥.
   let french = false;
@@ -325,11 +328,32 @@
     const place = (node) => {
       if (node.t === 'id' && /^(Filter\.)?atTop$/.test(node.v)) return '+\\infty';
       if (node.t === 'id' && /^(Filter\.)?atBot$/.test(node.v)) return '-\\infty';
-      if (node.t === 'group' && node.open === '(' && node.items.length === 2 && node.items[0].t === 'id' && /^(𝓝|nhds)$/.test(node.items[0].v)) {
-        const at = node.items[1];
-        return at.t === 'group' && at.open === '(' ? render(at.items) : render([at]);
-      }
-      return null;
+      if (node.t !== 'group' || node.open !== '(' || node.items[0]?.t !== 'id' || !/^(𝓝|nhds)$/.test(node.items[0].v)) return null;
+      const point = (at) => (at.t === 'group' && at.open === '(' ? render(at.items) : render([at]));
+      if (node.items.length === 2) return point(node.items[1]);
+      // `𝓝[<] a`, `𝓝[>] a`: from the left, from the right, written a⁻ and a⁺. `𝓝[≠] a` leaves
+      // the point out, and `𝓝[s] a` approaches it inside a set.
+      const [, how, at] = node.items;
+      if (node.items.length !== 3 || how.t !== 'group' || how.open !== '[') return null;
+      const side = how.items.length === 1 && how.items[0].t === 'sym' ? { '<': '-', '>': '+' }[how.items[0].v] : null;
+      if (side) return `${at.t === 'id' || at.t === 'num' ? render([at]) : `\\left(${point(at)}\\right)`}^{${side}}`;
+      if (how.items.length === 1 && isSym(how.items[0], '≠')) return `${point(at)} \\text{ (excluded)}`;
+      if (how.items.some((n) => n.t === 'sym' && /^[<>≤≥≠]$/.test(n.v))) return null; // `𝓝[≤] a` and the like: no short form
+      return `${point(at)} \\text{ within } ${render(how.items)}`;
+    };
+    // `cos`, `exp`, `√` … named as a function, with where it goes from and to: Mathlib has a
+    // real and a complex version of each, and a statement about the function should say which.
+    const CARRIER = { Real: '\\mathbb{R}', Complex: '\\mathbb{C}', NNReal: '\\mathbb{R}_{\\ge 0}' };
+    const TO_REALS = new Set(['Complex.arg', 'Complex.abs']);
+    const ONE_VARIABLE = new Set(['exp', 'log', 'sin', 'cos', 'tan', 'arcsin', 'arccos', 'arctan', 'sinh', 'cosh', 'tanh', 'arsinh', 'arcosh', 'artanh', 'arg', 'sqrt', 'abs']);
+    const typed = (node) => {
+      if (node.t !== 'id') return null;
+      const short = { rexp: 'Real.exp', cexp: 'Complex.exp' }[node.v];
+      const full = short || (node.v.includes('.') ? node.v : home ? `${home}.${node.v}` : node.v);
+      const dot = full.lastIndexOf('.');
+      const from = CARRIER[full.slice(0, dot)];
+      if (dot < 0 || !from || !ONE_VARIABLE.has(full.slice(dot + 1))) return null;
+      return `${ident(full)} : ${from} \\to ${TO_REALS.has(full) ? CARRIER.Real : from}`;
     };
     // `ContinuousOn f s` as "f is continuous on s", `s.Nonempty` as "s is nonempty", and
     // `Tendsto f atTop (𝓝 a)` as a limit. Returns the index after the last item used, or 0 when
@@ -347,12 +371,13 @@
       if (limit) {
         if (given.length !== 3) return 0;
         const from = place(given[1]), to = place(given[2]);
-        // "f → a at +∞" when the filters are familiar places; "along l" for a filter that is not one.
-        if (from || to) atom(`${argument(given[0])} \\to ${to ?? argument(given[2])} \\text{ ${from ? 'at' : 'along'} } ${from ?? argument(given[1])}`);
-        else atom(say('{0} tends to {2} along {1}', given.map(argument)));
+        // "f tends to a at +∞" when the filters are familiar places; "along l" for one that is not.
+        // In words, so that the arrow of a function's own "ℝ → ℝ" is the only arrow in sight.
+        const f = typed(given[0]) || argument(given[0]);
+        atom(`${f} \\text{ tends to } ${to ?? argument(given[2])} \\text{ ${from ? 'at' : 'along'} } ${from ?? argument(given[1])}`);
         return end;
       }
-      const args = [...(Phrases.predicate(name) ? [] : [ident(dotted[1])]), ...given.map(argument)];
+      const args = [...(Phrases.predicate(name) ? [] : [ident(dotted[1])]), ...given.map((a) => typed(a) || argument(a))];
       if (args.length < entry.arity || args.length > entry.arity + entry.extra) return 0;
       atom(say(entry.text, args));
       return end;
@@ -611,6 +636,7 @@
     french = !!options && options.notation === 'fr';
     geometry = /^EuclideanGeometry\./.test(String(fullName || ''));
     complex = /^Complex\./.test(String(fullName || ''));
+    home = (/^(Real|Complex|NNReal)\./.exec(String(fullName || '')) || [])[1] || '';
     try {
       let s = String(statement || '').replace(/\/--[\s\S]*?-\//g, '').trim();
       while (s.startsWith('@[')) {
@@ -760,6 +786,7 @@
     } finally {
       geometry = false;
       complex = false;
+      home = '';
       french = false;
     }
   }

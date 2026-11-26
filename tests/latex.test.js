@@ -366,7 +366,7 @@ test('thesis: the conclusion alone, for a node in the graph', () => {
 });
 
 test('expr: script capitals such as the neighbourhood filter 𝓝', () => {
-  assert.equal(expr('Tendsto f l (𝓝 a)'), 'f \\to a \\text{ along } l');
+  assert.equal(expr('Tendsto f l (𝓝 a)'), 'f \\text{ tends to } a \\text{ along } l');
   assert.equal(expr('s ∈ 𝓤 α'), 's \\in \\mathcal{U}\\,\\alpha');
   assert.equal(expr('𝓝[s] a'), '\\mathcal{N}\\,\\left[s\\right]\\,a');
 });
@@ -429,8 +429,8 @@ test('standard symbols: square root, absolute value, factorial, binomial, gcd, r
 test('standard symbols: only the standard meaning is replaced', () => {
   assert.equal(expr('Finset.pi s t'), '\\mathrm{Finset.pi}\\,s\\,t'); // a different pi
   assert.equal(expr('Filter.exp f'), '\\mathrm{Filter.exp}\\,f');
-  assert.equal(expr('Continuous Real.sqrt'), '\\sqrt{\\cdot} \\text{ is continuous}'); // not applied to anything
-  assert.equal(expr('Continuous Real.exp'), '\\exp \\text{ is continuous}');
+  assert.equal(expr('Continuous Real.sqrt'), '\\sqrt{\\cdot} : \\mathbb{R} \\to \\mathbb{R} \\text{ is continuous}'); // not applied to anything
+  assert.equal(expr('Continuous Real.exp'), '\\exp : \\mathbb{R} \\to \\mathbb{R} \\text{ is continuous}');
   assert.equal(expr('p.re'), '\\operatorname{Re}\\left(p\\right)');
   assert.equal(expr('Foo.bar.re'), '\\mathrm{Foo.bar.re}'); // not a variable's real part
 });
@@ -540,9 +540,9 @@ test('predicates written with a dot after their subject', () => {
 });
 
 test('limits: Tendsto is written as a limit', () => {
-  assert.equal(expr('Tendsto f atTop (𝓝 a)'), 'f \\to a \\text{ at } +\\infty');
-  assert.equal(expr('Tendsto f (𝓝 x) (𝓝 (f x))'), 'f \\to f\\,x \\text{ at } x');
-  assert.equal(expr('Tendsto f atBot atTop'), 'f \\to +\\infty \\text{ at } -\\infty');
+  assert.equal(expr('Tendsto f atTop (𝓝 a)'), 'f \\text{ tends to } a \\text{ at } +\\infty');
+  assert.equal(expr('Tendsto f (𝓝 x) (𝓝 (f x))'), 'f \\text{ tends to } f\\,x \\text{ at } x');
+  assert.equal(expr('Tendsto f atBot atTop'), 'f \\text{ tends to } +\\infty \\text{ at } -\\infty');
   assert.equal(expr('Tendsto f l m'), 'f \\text{ tends to } m \\text{ along } l');
 });
 
@@ -574,15 +574,46 @@ test('a root and what it covers are one term, as Lean prints them without bracke
 
 test('statements as Lean prints them: full names, instances called self, universe names', () => {
   assert.equal(prose('theorem continuousOn_cos {s : Set ℝ} : ContinuousOn Real.cos s', '', 'Real.continuousOn_cos'), 'Let $s \\subseteq \\mathbb{R}$. Then');
-  assert.equal(toLatex('theorem continuousOn_cos {s : Set ℝ} : ContinuousOn Real.cos s', 'Real.continuousOn_cos', '').thesis, '\\cos \\text{ is continuous on } s');
+  assert.equal(toLatex('theorem continuousOn_cos {s : Set ℝ} : ContinuousOn Real.cos s', 'Real.continuousOn_cos', '').thesis, '\\cos : \\mathbb{R} \\to \\mathbb{R} \\text{ is continuous on } s');
   assert.equal(toLatex('abbrev toNonAssocSemiring {α : Type u} [self : Semiring α] : NonAssocSemiring α', 'Semiring.toNonAssocSemiring', '').thesis,
     '\\mathrm{toNonAssocSemiring} \\in \\mathrm{NonAssocSemiring}\\,\\alpha');
 });
 
 test('notation as Lean prints it: rexp, cexp and the postfix factorial', () => {
-  assert.equal(expr('Filter.Tendsto rexp Filter.atTop Filter.atTop'), '\\exp \\to +\\infty \\text{ at } +\\infty');
+  assert.equal(expr('Filter.Tendsto rexp Filter.atTop Filter.atTop'), '\\exp : \\mathbb{R} \\to \\mathbb{R} \\text{ tends to } +\\infty \\text{ at } +\\infty');
   assert.equal(expr('cexp (π * I)'), '\\exp\\,\\left(\\pi \\cdot I\\right)');
   assert.equal(expr('(n + 1)! = (n + 1) * n !'), '\\left(n + 1\\right)! = \\left(n + 1\\right) \\cdot n!');
   assert.equal(expr('n ! ∣ m !'), 'n! \\mid m!');
   assert.equal(expr('0 ≤ ↑r'), '0 \\le r');
+});
+
+test('a standard function named as the subject of a property carries its domain and range', () => {
+  assert.equal(expr('Continuous Real.cos'), '\\cos : \\mathbb{R} \\to \\mathbb{R} \\text{ is continuous}');
+  assert.equal(expr('Differentiable ℂ Complex.exp'), '\\exp : \\mathbb{C} \\to \\mathbb{C} \\text{ is differentiable}');
+  assert.equal(expr('StrictMonoOn Real.arcsin (Set.Icc (-1) 1)'), '\\arcsin : \\mathbb{R} \\to \\mathbb{R} \\text{ is strictly increasing on } \\left[- 1, 1\\right]');
+  assert.equal(expr('Continuous Complex.arg'), '\\arg : \\mathbb{C} \\to \\mathbb{R} \\text{ is continuous}');
+  assert.equal(expr('Continuous NNReal.sqrt'), '\\sqrt{\\cdot} : \\mathbb{R}_{\\ge 0} \\to \\mathbb{R}_{\\ge 0} \\text{ is continuous}');
+  assert.equal(expr('Continuous rexp ∧ Continuous cexp'), '\\exp : \\mathbb{R} \\to \\mathbb{R} \\text{ is continuous} \\land \\exp : \\mathbb{C} \\to \\mathbb{C} \\text{ is continuous}');
+});
+
+test('the domain is only added where it is known and useful', () => {
+  assert.equal(expr('Continuous cos'), '\\cos \\text{ is continuous}'); // which cosine is not said
+  assert.equal(expr('Real.cos x ≤ 1'), '\\cos\\,x \\le 1'); // applied: x says it
+  assert.equal(expr('Continuous (fun x => Real.cos x)'), '\\left(x \\mapsto \\cos\\,x\\right) \\text{ is continuous}');
+  assert.equal(expr('Continuous Nat.gcd'), '\\gcd \\text{ is continuous}'); // not a function of one variable
+  // inside the Real namespace the source writes a bare `cos`
+  assert.equal(toLatex('theorem continuous_cos : Continuous cos', 'Real.continuous_cos').thesis, '\\cos : \\mathbb{R} \\to \\mathbb{R} \\text{ is continuous}');
+  assert.equal(toLatex('theorem continuous_cos : Continuous cos', 'Complex.continuous_cos').thesis, '\\cos : \\mathbb{C} \\to \\mathbb{C} \\text{ is continuous}');
+  assert.equal(toLatex('theorem t : Continuous cos', 'Foo.t').thesis, '\\cos \\text{ is continuous}');
+});
+
+test('limits are said in words, name the function with its domain, and know one-sided limits', () => {
+  assert.equal(expr('Filter.Tendsto Real.cos (𝓝[<] (π / 2)) (𝓝[>] 0)'),
+    '\\cos : \\mathbb{R} \\to \\mathbb{R} \\text{ tends to } 0^{+} \\text{ at } \\left(\\frac{\\pi}{2}\\right)^{-}');
+  assert.equal(expr('Tendsto f (𝓝[>] a) atTop'), 'f \\text{ tends to } +\\infty \\text{ at } a^{+}');
+  assert.equal(expr('Tendsto f (𝓝[≠] a) (𝓝 b)'), 'f \\text{ tends to } b \\text{ at } a \\text{ (excluded)}');
+  assert.equal(expr('Tendsto f (𝓝[s] a) (𝓝 b)'), 'f \\text{ tends to } b \\text{ at } a \\text{ within } s');
+  assert.equal(expr('Tendsto f (𝓝[Set.Ici a] a) (𝓝 b)'), 'f \\text{ tends to } b \\text{ at } a \\text{ within } \\left[a, +\\infty\\right)');
+  assert.equal(expr('Tendsto Real.log atTop atTop'), '\\log : \\mathbb{R} \\to \\mathbb{R} \\text{ tends to } +\\infty \\text{ at } +\\infty');
+  assert.equal(expr('Tendsto (fun r => r⁻¹) atTop (𝓝 0)'), '\\left(r \\mapsto r^{-1}\\right) \\text{ tends to } 0 \\text{ at } +\\infty');
 });
