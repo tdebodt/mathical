@@ -75,6 +75,11 @@
   #proof pre { margin: 0; padding: 12px 16px; font: 12.5px/1.55 var(--mono); white-space: pre; overflow: auto; tab-size: 2; min-height: 0; }
   #proof.collapsed pre, #proof.collapsed #proof-outline, #proof.collapsed #proof-steps { display: none; }
   #proof pre[hidden], #proof-outline[hidden], #proof-steps[hidden] { display: none; }
+  /* The proof alone: no graph, no side panel, the statement stays on top. */
+  main.reading { grid-template-columns: 1fr; }
+  main.reading #stage, main.reading aside, main.reading #proof-toggle { display: none; }
+  main.reading #proof { grid-row: 2 / span 2; max-height: none; border-top: 0; }
+  main.reading #proof-steps, main.reading #proof-outline { padding-inline: max(16px, calc((100% - 1100px) / 2)); }
   #proof-steps { padding: 10px 16px 14px; overflow: auto; min-height: 0; font-size: 13.5px; line-height: 1.6; }
   #proof-steps .open { display: flex; align-items: baseline; gap: 8px; margin: 2px 0; }
   #proof-steps .srow { display: grid; grid-template-columns: minmax(120px, 30%) 1fr; gap: 14px; align-items: baseline; padding: 6px 0; border-top: 1px solid var(--line); }
@@ -278,6 +283,7 @@
       <span class="seg" id="proof-view" role="group" aria-label="How to show the proof" hidden>
         <button type="button" data-v="outline" title="The steps of the argument: its intermediate claims, typeset, with the author's comments">Outline</button><button type="button" data-v="steps" title="Every step of the proof with what is left to prove after it, as Lean sees it. Lean checks the source file again for this: a few seconds to a minute the first time.">Steps</button><button type="button" data-v="lean" title="The proof as written, in Lean">Lean</button>
       </span>
+      <button type="button" id="proof-full" aria-pressed="false" title="Give the proof the whole page, without the graph (key: f)">Full page</button>
       <button type="button" id="proof-toggle" aria-expanded="true">Hide</button>
     </header>
     <div id="proof-outline" tabindex="0" hidden></div>
@@ -372,11 +378,12 @@ function readState() {
     l: [10, 25, 50, 100].includes(l) ? l : 10,
     p: p.get('p') === '1', // show Lean core plumbing; hidden unless asked for
     t: p.get('t') === '1', // theorems only
+    f: p.get('f') === '1', // the proof alone, without the graph
   };
 }
 function go(patch) {
   const s = { ...readState(), ...patch };
-  const p = new URLSearchParams({ n: s.n, d: s.d, e: s.e ? 1 : 0, l: s.l, ...(s.p ? { p: 1 } : {}), ...(s.t ? { t: 1 } : {}) });
+  const p = new URLSearchParams({ n: s.n, d: s.d, e: s.e ? 1 : 0, l: s.l, ...(s.p ? { p: 1 } : {}), ...(s.t ? { t: 1 } : {}), ...(s.f ? { f: 1 } : {}) });
   const next = '#' + p.toString();
   if (next === location.hash) return load();
   if ('n' in patch) location.hash = next; // a new focus is a history entry
@@ -915,7 +922,26 @@ function showProof(p) {
     drawProof();
   }
   if (wasHidden !== panel.hidden) relayout(); // the graph area changed height
+  applyReading();
 }
+// The proof alone on the page. It is part of the address, so a link opens the same way;
+// a declaration without a proof shows its graph whatever the address says.
+function applyReading() {
+  const main = $('proof').parentElement, was = main.classList.contains('reading');
+  const on = readState().f && !$('proof').hidden;
+  main.classList.toggle('reading', on);
+  $('proof-full').setAttribute('aria-pressed', String(on));
+  $('proof-full').textContent = on ? 'Show graph' : 'Full page';
+  if (on && $('proof').classList.contains('collapsed')) $('proof-toggle').click();
+  if (was && !on) relayout(); // the graph could not be measured while it was away
+}
+function setReading(on) {
+  const p = new URLSearchParams(location.hash.slice(1));
+  if (on) p.set('f', '1'); else p.delete('f');
+  history.replaceState(null, '', '#' + p.toString());
+  applyReading();
+}
+$('proof-full').onclick = () => setReading(!readState().f);
 $('proof-toggle').onclick = (e) => {
   const collapsed = $('proof').classList.toggle('collapsed');
   e.target.textContent = collapsed ? 'Show' : 'Hide';
@@ -1341,6 +1367,10 @@ q.addEventListener('blur', closeResults);
 q.addEventListener('focus', () => { if (q.value.trim()) runSearch(); });
 window.addEventListener('keydown', (e) => {
   if (e.key === '/' && document.activeElement !== q && !e.metaKey && !e.ctrlKey) { e.preventDefault(); q.focus(); }
+  const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
+  if (typing || e.metaKey || e.ctrlKey || e.altKey || $('proof').hidden) return;
+  if (e.key === 'f') setReading(!readState().f);
+  if (e.key === 'Escape' && readState().f) setReading(false);
 });
 
 // Open on a default declaration when the address names none.

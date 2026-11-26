@@ -54,6 +54,9 @@ gets its statements in a fraction of a second. The top bar shows "Lean: ready".
   rests on a single other result, one that is specific and has an argument of its own.
   **restates**: it says the same as the one result it rests on. **hide bookkeeping**
   hides the first two kinds.
+- **Full page** on the proof panel (or the `f` key; `Esc` to leave) gives the proof the
+  whole page: the graph and the side panel go away, the statement stays on top. It is
+  part of the address (`f=1`), so a link opens the same way.
 - With Lean, the proof panel has a **Steps** view: every step of the proof as Lean sees
   it, with what is left to prove after it and what became known. `rw [a, b, c]` is shown
   rule by rule; cases are indented under the step that split them. Lean only knows these
