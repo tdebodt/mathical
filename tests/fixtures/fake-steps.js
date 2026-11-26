@@ -6,6 +6,7 @@ console.log('Lean chatter that is not ours');
 if (name === 'Thm') {
   const g0 = goal('g0', 'n + 0 = n'), g1 = goal('g1', 'n = n');
   console.log(JSON.stringify({ name, file, steps: [
+    { start: 4, stop: 12, kind: '@const', text: '', name: 'Core', before: [], after: [] }, // what the name refers to
     { start: 4, stop: 12, kind: 'null', text: 'add_zero', before: [g0], after: [g1] },
     { start: 12, stop: 13, kind: '«]»', text: ']', before: [g1], after: [] },
     { start: 0, stop: 13, kind: 'Lean.Parser.Tactic.rwSeq', text: 'rw [add_zero]', before: [g0], after: [] },

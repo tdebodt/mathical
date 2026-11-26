@@ -123,7 +123,56 @@
     return `\\mathrm{${body}}` + (m[2] ? `_{${unsub(m[2])}}` : '');
   }
 
-  function lex(src) {
+  // Lean can print each bound variable with its type, in brackets: `∃ (n : ℤ), …`,
+  // `fun (x : ℝ) => …`, `⋃ (i : ι), …`. A quantifier is read as "∃ n : ℤ, …" (one
+  // quantifier per bracket, which says the same); for the others the type is left out.
+  const QUANTIFIER = /^(∃!|∃|∀)(?![ᶠ\p{L}\p{N}_])/u;
+  const BINDER = /^(fun|λ|∀ᶠ|∃ᶠ|[⋃⋂⨆⨅∑∏∫∮]'?)(?![\p{L}\p{N}_])/u;
+  function typedGroups(src, from) {
+    const groups = [];
+    let i = from;
+    for (;;) {
+      let j = i;
+      while (src[j] === ' ') j++;
+      if (src[j] !== '(') break;
+      let depth = 0, k = j, colon = -1;
+      for (; k < src.length; k++) {
+        if ('([{⟨'.includes(src[k])) depth++;
+        else if (')]}⟩'.includes(src[k])) { depth--; if (depth === 0) break; }
+        else if (depth === 1 && colon < 0 && src[k] === ':' && src[k + 1] !== '=') colon = k;
+      }
+      const names = colon < 0 ? '' : src.slice(j + 1, colon).trim();
+      if (k >= src.length || !/^[^\s()\[\]{}:,]+(\s+[^\s()\[\]{}:,]+)*$/.test(names)) break;
+      groups.push({ names, type: src.slice(colon + 1, k).trim() });
+      i = k + 1;
+    }
+    return { groups, end: i };
+  }
+  function plainBinders(src) {
+    if (!src.includes('(')) return src;
+    let out = '';
+    for (let i = 0; i < src.length;) {
+      const rest = src.slice(i);
+      const boundary = i === 0 || !/[\p{L}\p{N}_.']/u.test(src[i - 1]);
+      const q = boundary ? QUANTIFIER.exec(rest) : null, b = boundary && !q ? BINDER.exec(rest) : null;
+      const word = q || b;
+      if (!word) { out += src[i++]; continue; }
+      const { groups, end } = typedGroups(src, i + word[0].length);
+      if (!groups.length) { out += word[0]; i += word[0].length; continue; }
+      // What a map applied to such a variable starts from (see introduceMaps). A name bound
+      // twice with different types has no one type.
+      if (q && boundTypes) for (const g of groups) for (const name of g.names.split(/\s+/)) {
+        boundTypes.set(name, boundTypes.has(name) && boundTypes.get(name) !== g.type ? undefined : g.type);
+      }
+      if (q) out += groups.map((g, n) => `${q[0]} ${g.names} : ${plainBinders(g.type)}${n < groups.length - 1 ? ', ' : ''}`).join('');
+      else out += `${b[0]} ${groups.map((g) => g.names).join(' ')}`;
+      i = end;
+    }
+    return out;
+  }
+
+  function lex(given) {
+    const src = plainBinders(String(given));
     const out = [];
     let i = 0;
     scan: while (i < src.length) {
@@ -728,14 +777,16 @@
     boundTypes = new Map();
     try {
       let result = convert(statement, fullName, context, options);
-      if (!result || !coercions.size) return result;
-      const maps = coercions, types = boundTypes;
+      // `thesisAlone`: the conclusion for use without the sentence that introduces a map, so
+      // each map says where it lands (ι_ℝ).
+      if (!result || !coercions.size) return result && { ...result, thesisAlone: result.thesis };
+      const maps = coercions, types = boundTypes, thesisAlone = result.thesis;
       if (maps.size === 1) { // one map only: plain ι, with no subscript
         iotaPlain = true;
         coercions = new Map();
         result = convert(statement, fullName, context, options);
       }
-      return introduceMaps(result, maps, types, options);
+      return { ...introduceMaps(result, maps, types, options), thesisAlone };
     } finally {
       coercions = null;
       iotaPlain = false;
@@ -788,6 +839,31 @@
   // operation, like ι(r/s) = ι(r)/ι(s) or "tan of the angle of x is tan x". The test needs
   // no convention: erase every cast, and see whether the two sides of the equation (or of
   // the equivalence) have become the same.
+  // Typeset text split at a sign, at the top level only: outside every bracket and brace.
+  function splitTex(text, sign) {
+    const pieces = [];
+    let depth = 0, start = 0;
+    for (let i = 0; i < text.length; i++) {
+      if (text.startsWith('\\left', i) || text[i] === '{') depth++;
+      else if (text.startsWith('\\right', i) || text[i] === '}') depth--;
+      else if (depth === 0 && text.startsWith(sign, i)) { pieces.push(text.slice(start, i)); start = i + sign.length; i = start - 1; }
+    }
+    return [...pieces, text.slice(start)];
+  }
+  // The two sides of a typeset conclusion that is an equivalence or an equation, as a
+  // rewrite uses it: [left, right]. Null for anything else (an implication, a statement
+  // about all x, an "or" of equations), where there are no two sides to speak of.
+  function sides(thesis) {
+    const text = String(thesis || '');
+    if (/^\s*\\(forall|exists)\b/.test(text)) return null;
+    const iff = splitTex(text, ' \\iff ');
+    if (iff.length === 2) return iff.map((x) => x.trim());
+    if (iff.length > 2) return null;
+    if ([' \\to ', ' \\lor ', ' \\land ', '\\neg '].some((sign) => splitTex(text, sign).length > 1)) return null;
+    const eq = splitTex(text, ' = ');
+    return eq.length === 2 ? eq.map((x) => x.trim()) : null;
+  }
+
   function castRule(statement, fullName, context, options) {
     coercions = new Map();
     iotaPlain = true;
@@ -796,17 +872,7 @@
     try {
       const result = convert(statement, fullName, context, options);
       if (!result || !coercions.size || !/^(Theorem|Lemma)$/.test(result.kind)) return false;
-      // Split at the top level, outside every bracket and brace.
-      const split = (text, sign) => {
-        const pieces = [];
-        let depth = 0, start = 0;
-        for (let i = 0; i < text.length; i++) {
-          if (text.startsWith('\\left', i) || text[i] === '{') depth++;
-          else if (text.startsWith('\\right', i) || text[i] === '}') depth--;
-          else if (depth === 0 && text.startsWith(sign, i)) { pieces.push(text.slice(start, i)); start = i + sign.length; i = start - 1; }
-        }
-        return [...pieces, text.slice(start)];
-      };
+      const split = splitTex;
       const bare = (text) => text.replace(/\\left|\\right|\\,|[(){}\s]/g, '');
       const whole = result.thesis;
       const sides = split(whole, ' \\iff ').length === 2 ? split(whole, ' \\iff ') : split(whole, ' = ');
@@ -981,5 +1047,5 @@
     }
   }
 
-  return { expr, toLatex, castRule };
+  return { expr, toLatex, castRule, sides };
 });

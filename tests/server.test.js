@@ -304,6 +304,9 @@ test('with Lean: the steps of a proof, each with what it leaves to prove', async
     assert.equal(got.found, true);
     assert.equal(got.proof.goal, 'n + 0 = n');
     assert.deepEqual(got.proof.steps.map((s) => [s.text, s.results[0].target, s.closes]), [['add_zero', 'n = n', true]]);
+    // what a step cites comes with its statement, as Lean has it
+    assert.deepEqual(got.proof.steps[0].cites, ['Core']);
+    assert.deepEqual(got.proof.cited, { Core: 'theorem Core (n : ℕ) : n = n' });
     assert.deepEqual(await (await fetch(`${base}/api/steps?name=Hub`)).json(), { found: false, reason: 'no_steps' });
     assert.equal((await fetch(`${base}/api/steps?name=Missing`)).status, 404);
     assert.equal((await fetch(`${base}/api/steps`)).status, 400);

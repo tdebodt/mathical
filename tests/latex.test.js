@@ -104,7 +104,7 @@ test('membership: a variable is "in" its type, unless that type is a function ty
 
 test('membership inside quantifiers', () => {
   assert.equal(expr('∃ q : ℚ, x < q ∧ q < y'), '\\exists q \\in \\mathbb{Q},\\; x < q < y');
-  assert.equal(expr('∀ (x : ℝ) (f : ℕ → ℝ), f 0 ≤ x'), '\\forall \\left(x \\in \\mathbb{R}\\right)\\,\\left(f : \\mathbb{N} \\to \\mathbb{R}\\right),\\; f\\,0 \\le x');
+  assert.equal(expr('∀ (x : ℝ) (f : ℕ → ℝ), f 0 ≤ x'), '\\forall x \\in \\mathbb{R},\\; \\forall f : \\mathbb{N} \\to \\mathbb{R},\\; f\\,0 \\le x');
   assert.equal(expr('∀ ε > 0, (x : ℝ) ≤ ε'), '\\forall \\varepsilon > 0,\\; \\left(x : \\mathbb{R}\\right) \\le \\varepsilon'); // a type ascription keeps its colon
   assert.equal(expr('∀ α : Type*, Nonempty α'), '\\forall \\alpha : \\mathrm{Type},\\; \\alpha \\text{ is nonempty}');
 });
@@ -133,7 +133,7 @@ test('a variable of type `Set α` is a subset of α', () => {
     's, t \\subseteq \\alpha', 'u \\subseteq \\alpha \\times \\beta', 'v \\in \\left[a, b\\right]', 'F : \\mathcal{P}\\left(\\alpha\\right) \\to \\mathrm{Prop}',
   ]);
   assert.equal(expr('∀ s : Set α, ∃ t : Set (Set α), s ∈ t'), '\\forall s \\subseteq \\alpha,\\; \\exists t \\subseteq \\mathcal{P}\\left(\\alpha\\right),\\; s \\in t');
-  assert.equal(expr('∀ (s : Set ℝ) (x : ℝ), x ∈ s'), '\\forall \\left(s \\subseteq \\mathbb{R}\\right)\\,\\left(x \\in \\mathbb{R}\\right),\\; x \\in s');
+  assert.equal(expr('∀ (s : Set ℝ) (x : ℝ), x ∈ s'), '\\forall s \\subseteq \\mathbb{R},\\; \\forall x \\in \\mathbb{R},\\; x \\in s');
 });
 
 test('several hypotheses are joined as prose, without their Lean names', () => {
@@ -760,4 +760,59 @@ test('more spaces: power set, finite subsets, polynomials, power series', () => 
   assert.equal(expr('l[i]'), 'l\\,\\left[i\\right]'); // indexing is not a polynomial ring
   // as a binder, a set is still "a subset of"
   assert.equal(prose('theorem t (s : Set α) (t : Finset α) : s = s'), 'Let $s \\subseteq \\alpha$, $t \\in \\mathcal{P}_{\\mathrm{fin}}\\left(\\alpha\\right)$. Then');
+});
+
+test('sides: the two sides of a rule that is an equation or an equivalence, and nothing else', () => {
+  const { sides } = require('../public/lean-latex.js');
+  assert.deepEqual(sides('a - b = 0 \\iff a = b'), ['a - b = 0', 'a = b']);
+  assert.deepEqual(sides('\\cos x - \\cos y = -2 \\cdot \\sin \\left(\\frac{x + y}{2}\\right)'), ['\\cos x - \\cos y', '-2 \\cdot \\sin \\left(\\frac{x + y}{2}\\right)']);
+  assert.deepEqual(sides('p = \\mathrm{False}'), ['p', '\\mathrm{False}']);
+  assert.deepEqual(sides('\\left(a = b\\right) = \\left(b = a\\right)'), ['\\left(a = b\\right)', '\\left(b = a\\right)']);
+  // not of that shape: an implication, a statement about all x, an "or" of equations, an inequality
+  assert.equal(sides('p \\to a = b'), null);
+  assert.equal(sides('\\forall x,\\; a = x'), null);
+  assert.equal(sides('\\forall x,\\; a x \\iff b x'), null);
+  assert.equal(sides('a = 0 \\lor b = 0'), null);
+  assert.equal(sides('x = y \\lor z'), null);
+  assert.equal(sides('2 \\ne 0'), null);
+});
+
+test('bound variables that Lean prints with their type: "there is n in ℤ", without brackets', () => {
+  assert.equal(expr('∃ (n : ℤ), n = x'), expr('∃ n : ℤ, n = x'));
+  assert.equal(expr('∃ (n : ℤ), n = x'), '\\exists n \\in \\mathbb{Z},\\; n = x');
+  assert.equal(expr('∀ (x : ℝ), ∃ (n : ℕ), x < n'), expr('∀ x : ℝ, ∃ n : ℕ, x < n'));
+  // several groups: one quantifier each, which says the same
+  assert.equal(expr('∃ (a : ℕ) (b : ℤ), a = b'), expr('∃ a : ℕ, ∃ b : ℤ, a = b'));
+  assert.equal(expr('∃ (a b : ℕ), a = b'), expr('∃ a b : ℕ, a = b'));
+  assert.equal(expr('∃! (x : ℝ), f x = 0'), expr('∃! x : ℝ, f x = 0'));
+  // a type with brackets of its own
+  assert.equal(expr('∃ (p : ℕ × (ℤ × ℤ)), q p'), expr('∃ p : ℕ × (ℤ × ℤ), q p'));
+});
+
+test('typed variables of a function, a union, an integral: shown as before, the type left out', () => {
+  assert.equal(expr('fun (x : ℝ) ↦ x + 1'), expr('fun x ↦ x + 1'));
+  assert.equal(expr('fun (x : ℝ) (i j : ι) => f x i j'), expr('fun x i j => f x i j'));
+  assert.equal(expr('⋃ (i : ι), s i'), expr('⋃ i, s i'));
+  assert.equal(expr('∫ (x : E × ℝ), f x ∂μ'), expr('∫ x, f x ∂μ'));
+  assert.equal(expr('∀ᶠ (n : ι) in l, p n'), expr('∀ᶠ n in l, p n'));
+  assert.equal(expr("∑' (n : ι), f n"), expr("∑' n, f n"));
+  // brackets that are not a typed variable are left alone
+  assert.equal(expr('∀ (x) (y), x = y'), '\\forall \\left(x\\right)\\,\\left(y\\right),\\; x = y');
+  assert.equal(expr('f (x : ℝ)'), 'f\\,\\left(x : \\mathbb{R}\\right)');
+});
+
+test('a canonical map applied to a bound variable: its source is that variable\'s type', () => {
+  const tex = toLatex('theorem sin_eq_zero_iff {x : ℝ} : Real.sin x = 0 ↔ ∃ (n : ℤ), (↑n : ℝ) * π = x', 'Real.sin_eq_zero_iff', '');
+  assert.ok(tex.parts.some((p) => p.math === '\\iota : \\mathbb{Z} \\to \\mathbb{R}'), JSON.stringify(tex.parts));
+  // the same name bound twice with different types: no source is claimed
+  const two = toLatex('theorem t : (∃ (n : ℤ), (↑n : ℝ) = 0) ∧ ∃ (n : ℕ), (↑n : ℝ) = 1', 't', '');
+  assert.ok(!two.parts.some((p) => p.math && p.math.startsWith('\\iota :')), JSON.stringify(two.parts));
+});
+
+test('the conclusion on its own, away from the sentence that introduces the map: the map carries its target', () => {
+  const tex = toLatex('theorem sin_eq_zero_iff {x : ℝ} : Real.sin x = 0 ↔ ∃ (n : ℤ), (↑n : ℝ) * π = x', 'Real.sin_eq_zero_iff', '');
+  assert.equal(tex.thesis, '\\sin\\,x = 0 \\iff \\exists n \\in \\mathbb{Z},\\; \\iota\\left(n\\right) \\cdot \\pi = x');
+  assert.equal(tex.thesisAlone, '\\sin\\,x = 0 \\iff \\exists n \\in \\mathbb{Z},\\; \\iota_{\\mathbb{R}}\\left(n\\right) \\cdot \\pi = x');
+  const plain = toLatex('theorem mul_comm (a b : ℝ) : a * b = b * a', 'mul_comm', '');
+  assert.equal(plain.thesisAlone, plain.thesis);
 });

@@ -63,7 +63,7 @@ unsafe def main : IO Unit := do
   let env ← importModules #[{ module := `Mathlib }] {} (trustLevel := 0) (loadExts := true)
   -- A coercion is printed with the type it lands in: `(↑(r / s) : ℂ)`, not a bare `↑(r / s)`.
   -- Without that, a statement such as `↑(r / s) = ↑r / ↑s` does not say what it is about.
-  let options : Options := ({} : Options).setBool `pp.coercions.types true
+  let options : Options := ({} : Options).setBool `pp.coercions.types true |>.setBool `pp.funBinderTypes true
   let ctx : Core.Context := { fileName := "<signatures>", fileMap := default, maxHeartbeats := 0, options }
   -- Much of Mathlib's notation is switched on per file with `open scoped …`. Switch the common
   -- ones on here, so that statements are printed as their authors wrote them: `π`, `∠ A B C`,

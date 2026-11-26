@@ -109,7 +109,12 @@ function createServer(dbPath, { fetchSource = fetchFromGitHub, lean = null } = {
     const recorded = await lean.steps(name, file);
     if (recorded === undefined) return { found: false, reason: 'no_lean' };
     const proof = arrange(recorded);
-    return proof && proof.steps.length ? { found: true, proof } : { found: false, reason: 'no_steps' };
+    if (!proof || !proof.steps.length) return { found: false, reason: 'no_steps' };
+    // The statement of each result a step cites. Lean named them, so they need not be in the graph.
+    const names = [...new Set(proof.steps.flatMap((s) => s.cites))].slice(0, 400);
+    const kindOf = db.prepare('SELECT kind FROM nodes WHERE name = ?');
+    proof.cited = await lean.statements(names.map((n) => ({ name: n, kind: (kindOf.get(n) || { kind: 'theorem' }).kind })));
+    return { found: true, proof };
   };
 
   // For the declaration `focus`: of the `dependencies` given, which its statement mentions,
@@ -299,7 +304,7 @@ if (require.main === module) {
   const elan = path.join(os.homedir(), '.elan', 'bin');
   const compiled = fs.existsSync(path.join(checkout, '.lake', 'build', 'lib'));
   const lean = new LeanStatements({
-    cachePath: path.join(__dirname, 'data', 'lean-cache.v3.db'), // v3: scoped notation on, coercions printed with their type
+    cachePath: path.join(__dirname, 'data', 'lean-cache.v4.db'), // v4: bound variables printed with their type (∃ (n : ℤ), …)
     command: compiled ? (fs.existsSync(path.join(elan, 'lake')) ? path.join(elan, 'lake') : 'lake') : null,
     args: ['env', 'lean', '--run', path.join(__dirname, 'lean', 'Signatures.lean')],
     stepsArgs: ['env', 'lean', '--run', path.join(__dirname, 'lean', 'Steps.lean')],

@@ -95,14 +95,14 @@ test('the steps of a proof: a separate run of Lean on the source file, remembere
   const cachePath = tmp();
   const lean = new LeanStatements({ cachePath, command: process.execPath, args: [fake], stepsArgs: [fakeSteps, 'ok'] });
   const steps = await lean.steps('Thm', 'Mathlib/Sample.lean');
-  assert.equal(steps.length, 4);
-  assert.equal(steps[0].text, 'add_zero');
+  assert.equal(steps.length, 5);
+  assert.equal(steps[1].text, 'add_zero');
   assert.equal(await lean.steps('Nope', 'Mathlib/Sample.lean'), null); // Lean ran and found nothing
   assert.equal(lean.state, 'idle'); // the session that answers statements was not needed
   await lean.close();
   // remembered: no Lean needed the second time, and "nothing" is remembered too
   const later = new LeanStatements({ cachePath });
-  assert.equal((await later.steps('Thm', 'Mathlib/Sample.lean')).length, 4);
+  assert.equal((await later.steps('Thm', 'Mathlib/Sample.lean')).length, 5);
   assert.equal(await later.steps('Nope', 'Mathlib/Sample.lean'), null);
   assert.equal(await later.steps('Other', 'Mathlib/Sample.lean'), undefined); // not known, and no Lean to ask
   await later.close();
@@ -114,6 +114,6 @@ test('the steps of a proof: a run that fails is not remembered', async () => {
   assert.equal(await broken.steps('Thm', 'Mathlib/Sample.lean'), undefined);
   await broken.close();
   const fixed = new LeanStatements({ cachePath, command: process.execPath, args: [fake], stepsArgs: [fakeSteps, 'ok'] });
-  assert.equal((await fixed.steps('Thm', 'Mathlib/Sample.lean')).length, 4);
+  assert.equal((await fixed.steps('Thm', 'Mathlib/Sample.lean')).length, 5);
   await fixed.close();
 });

@@ -39,7 +39,7 @@ seconds, during which the page works from the source text; a view of new nodes t
 gets its statements in a fraction of a second. The top bar shows "Lean: ready".
 
 - The Lean program is `lean/Signatures.lean`; `lib/lean.js` runs it and keeps its
-  answers in `data/lean-cache.v3.db`, which survives `node build.js`.
+  answers in `data/lean-cache.v4.db`, which survives `node build.js`.
 - It covers declarations the source never writes out (the ones Lean generates), and
   switches on Mathlib's common scoped notations so that statements print as their
   authors wrote them.
@@ -57,6 +57,22 @@ gets its statements in a fraction of a second. The top bar shows "Lean: ready".
 - **Full page** on the proof panel (or the `f` key; `Esc` to leave) gives the proof the
   whole page: the graph and the side panel go away, the statement stays on top. It is
   part of the address (`f=1`), so a link opens the same way.
+- In the Steps view a step is said **in plain words** where there are words for it
+  ("prove the two directions separately" for `constructor` on an equivalence, "assume
+  the premise, as h" for `intro h`), with the Lean command small beneath. The wording is
+  a list of the commands met most often (`lib/steps.js`); where one command does several
+  things, the goals Lean recorded decide. A command not in the list is left as written.
+  A result that a step cites is shown with its conclusion, typeset, next to its name;
+  its conditions are not repeated there. Lean says which declaration each name in the
+  proof refers to (`lean/Steps.lean`), so this also works for results the graph does not
+  hold, such as `sub_eq_zero`. A rule used from right to
+  left (`← rule`) is written with its two sides exchanged (a = b ⟺ a − b = 0 for
+  `← sub_eq_zero`), so a rewrite always turns the left side into the right side.
+- Lean prints every bound variable with its type (`pp.funBinderTypes`), so a statement
+  says where its variables live: "∃ n ∈ ℤ, …", not "∃ n, …". For a function, a union or
+  an integral the type is left out, as before. A canonical map applied to such a variable
+  is introduced with its source ("Let ι : ℤ → ℝ be the canonical map"); where a conclusion
+  stands alone, as under a step, the map carries where it lands (ι_ℝ).
 - With Lean, the proof panel has a **Steps** view: every step of the proof as Lean sees
   it, with what is left to prove after it and what became known. `rw [a, b, c]` is shown
   rule by rule; cases are indented under the step that split them. Lean only knows these

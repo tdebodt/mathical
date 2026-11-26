@@ -82,7 +82,7 @@
   main.reading #proof-steps, main.reading #proof-outline { padding-inline: max(16px, calc((100% - 1100px) / 2)); }
   #proof-steps { padding: 10px 16px 14px; overflow: auto; min-height: 0; font-size: 13.5px; line-height: 1.6; }
   #proof-steps .open { display: flex; align-items: baseline; gap: 8px; margin: 2px 0; }
-  #proof-steps .srow { display: grid; grid-template-columns: minmax(120px, 30%) 1fr; gap: 14px; align-items: baseline; padding: 6px 0; border-top: 1px solid var(--line); }
+  #proof-steps .srow { display: grid; grid-template-columns: minmax(160px, 40%) 1fr; gap: 20px; align-items: baseline; padding: 6px 0; border-top: 1px solid var(--line); }
   #proof-steps .srow.case { border-top: 0; padding-top: 8px; }
   #proof-steps .how { font: 12px/1.5 var(--mono); overflow-wrap: anywhere; }
   #proof-steps .how .verb { font: 12px var(--sans); }
@@ -93,6 +93,14 @@
   #proof-steps .formula { min-width: 0; overflow-x: auto; overflow-y: hidden; }
   #proof-steps .formula code { font: 12px var(--mono); }
   #proof-steps .done { color: var(--muted); }
+  #proof-steps .acase { border-left: 2px solid var(--line); padding-left: 10px; margin: 2px 0 8px; }
+  #proof-steps .acase:last-child { margin-bottom: 0; }
+  #proof-steps .casehead { font: 600 11.5px var(--sans); color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+  #proof-steps .says { font: 13.5px/1.5 var(--sans); }
+  #proof-steps .says + .lean { color: var(--muted); font-size: 11.5px; }
+  #proof-steps .cite { color: var(--muted); font: 12.5px/1.6 var(--sans); margin-top: 2px; }
+  #proof-steps .cite .label { color: var(--muted); font: 12px var(--sans); }
+  #proof-steps .cite .label:not(:only-child) { white-space: nowrap; }
   #proof-steps .about, #proof-steps .wait { color: var(--muted); font-size: 12.5px; }
   #proof-outline { padding: 10px 16px 14px; overflow: auto; min-height: 0; font-size: 13.5px; line-height: 1.6; }
   #proof-outline .step { display: flex; align-items: baseline; gap: 8px; margin: 3px 0; }
@@ -864,13 +872,35 @@ async function showSteps(p) {
   try { got = await stepsFor.get(p.name); } catch { got = { found: false, reason: 'failed' }; }
   if (shownProof !== p || box.dataset.name !== p.name) return; // the reader moved on
   if (!got.found) { box.replaceChildren(h('p', { className: 'about', textContent: NO_STEPS[got.reason] || 'The steps could not be computed.' })); return; }
-  box.replaceChildren(...renderSteps(got.proof, p));
+  box.replaceChildren(...renderSteps(got.proof, p, got.proof.cited || {}));
   box.scrollTop = 0;
 }
 // A hypothesis or a variable, as a line: its name, then what it says.
 const variable = (x) => formula(/→|^(Type|Sort|Prop)\b/.test(x.type) ? `${x.name} : ${x.type}` : `${x.name} ∈ ${x.type}`);
 const known = (x) => (x.prop ? h('span', { className: 'line' }, h('span', { className: 'label', textContent: x.name }), formula(x.type, true)) : variable(x));
-function renderSteps(proof, p) {
+// What a cited result says: its name and its conclusion, typeset. Nothing when it cannot be typeset.
+function citation(name, statement, named, step) {
+  const tex = statement && window.LeanLatex ? LeanLatex.toLatex(statement, name, '', { notation: notation() }) : null;
+  if (!tex || !tex.thesis) return null;
+  const says = tex.thesisAlone || tex.thesis; // a map in it is written with where it lands: no sentence here introduces it
+  const typeset = (source) => { const box = h('span', { className: 'formula' }); katex.render(source, box, { displayMode: false, throwOnError: true, strict: false }); return box; };
+  const word = (textContent) => h('span', { className: 'label', textContent });
+  try {
+    // A rule used from right to left (`← rule`) is written with its two sides exchanged, so
+    // that a rewrite always turns what is on the left into what is on the right. An equation
+    // or an equivalence says the same either way round.
+    const sides = step.rewrite && step.backwards && !named ? LeanLatex.sides(says) : null;
+    if (sides) {
+      const sign = says.includes(' \\iff ') ? ' \\iff ' : ' = ';
+      const line = h('div', { className: 'line cite', title: name + ', written here with its two sides exchanged, as the step uses it' }, word('which says'), typeset(sides[1] + sign + sides[0]));
+      line.dataset.turned = '1';
+      return line;
+    }
+    // Its name is said only when the step names several results.
+    return h('div', { className: 'line cite', title: name }, word(named ? name.slice(name.lastIndexOf('.') + 1) + ':' : 'which says'), typeset(says));
+  } catch { return null; }
+}
+function renderSteps(proof, p, cited) {
   const out = [];
   const objects = proof.given.filter((x) => !x.prop), facts = proof.given.filter((x) => x.prop);
   if (objects.length) out.push(h('div', { className: 'open' }, h('span', { className: 'verb', textContent: 'given' }), ...objects.map(variable)));
@@ -880,17 +910,30 @@ function renderSteps(proof, p) {
     const row = h('div', { className: 'srow ' + s.kind });
     row.style.paddingLeft = s.depth * 22 + 'px';
     const how = h('div', { className: 'how' });
-    if (s.kind === 'case') how.append(h('span', { className: 'verb', textContent: 'case' }));
+    if (s.kind === 'case') how.append(h('span', { className: 'casehead', textContent: s.label ? `case ${s.label}` : 'case' }));
     else {
-      if (s.rewrite) how.append(h('span', { className: 'verb', textContent: s.at ? `rewrite ${s.at} with ` : 'rewrite with ' }));
-      how.append(renderLean(s.text, p.deps, p.name));
+      if (s.rewrite) how.append(h('span', { className: 'verb', textContent: `rewrite ${s.at ? s.at + ' ' : ''}with ` }));
+      // In words when there are words for it, with what was written to Lean small beneath.
+      if (s.says) how.append(h('div', { className: 'says', textContent: s.says }));
+      how.append(h(s.says ? 'div' : 'span', { className: 'lean' }, renderLean(s.text, p.deps, p.name)));
     }
+    // What each cited result says, under the step that names it.
+    let directed = false; // whether a line under the step already shows which way the rule is used
+    if (s.kind !== 'case') for (const name of (s.cites || []).slice(0, 3)) {
+      const line = citation(name, cited[name], s.cites.length > 1, s);
+      if (line) how.append(line);
+      if (line && line.dataset.turned) directed = true;
+    }
+    if (s.backwards && !directed) how.append(h('div', { className: 'line cite' }, h('span', { className: 'label', textContent: 'used from right to left: its right-hand side is replaced by its left-hand side' })));
     const what = h('div', { className: 'what' });
     const many = s.results.length > 1;
     s.results.forEach((r, i) => {
-      for (const x of r.learned) what.append(h('div', { className: 'line' }, h('span', { className: 'verb', textContent: x.prop ? 'now' : 'with' }), known(x)));
-      if (r.target !== null) what.append(h('div', { className: 'line' },
-        h('span', { className: 'verb', textContent: s.kind === 'case' ? 'to prove' : many ? `case ${i + 1}:` : 'left to prove' }), formula(r.target, true)));
+      // Several cases: each in a block of its own, under its number.
+      const into = many ? h('div', { className: 'acase' }, h('div', { className: 'casehead', textContent: `case ${s.within ? s.within + '.' : ''}${i + 1}` })) : what;
+      for (const x of r.learned) into.append(h('div', { className: 'line' }, h('span', { className: 'verb', textContent: !x.prop ? 'with' : s.kind === 'case' ? 'knowing' : 'now' }), known(x)));
+      if (r.target !== null) into.append(h('div', { className: 'line' },
+        h('span', { className: 'verb', textContent: s.kind === 'case' || many ? 'to prove' : 'left to prove' }), formula(r.target, true)));
+      if (many) what.append(into);
     });
     if (s.closes) what.append(h('div', { className: 'done', textContent: s.rewrite && s.results.length ? 'both sides are the same: done ∎' : 'done ∎' }));
     else if (!s.results.length && s.kind !== 'case') what.append(h('div', { className: 'done', textContent: 'nothing changes' }));
@@ -898,7 +941,7 @@ function renderSteps(proof, p) {
     out.push(row);
   }
   out.push(h('p', { className: 'about', textContent:
-    'Recorded by Lean while checking the proof: after each step, what is left to prove and what became known. A step such as simp or linarith does its work inside; only its outcome is shown.' }));
+    'Recorded by Lean while checking the proof: after each step, what is left to prove and what became known. A step marked automatic does its work inside; only its outcome is shown. A result that a step cites is shown by its conclusion alone; its conditions are on its own page. A rule that a step uses from right to left is written with its two sides exchanged, so a rewrite always turns the left side into the right side.' }));
   return out;
 }
 $('proof-view').onclick = (e) => {

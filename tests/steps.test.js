@@ -69,6 +69,8 @@ test('cases: a split lists its cases, a bullet opens one, and its steps sit unde
     ['step', 0, 'constructor'], ['case', 0, '·'], ['step', 1, 'intro h'], ['step', 1, 'exact f h'], ['case', 0, '·'], ['step', 1, 'exact g'],
   ]);
   assert.deepEqual(proof.steps[0].results.map((x) => x.target), ['a → b', 'b → a']);
+  // each bullet says which case it opens, of how many
+  assert.deepEqual(proof.steps.filter((s) => s.kind === 'case').map((s) => [s.number, s.of]), [[1, 2], [2, 2]]);
   assert.deepEqual(proof.steps[1].results, [{ target: 'a → b', learned: [] }]);
   assert.deepEqual(proof.steps[2].results, [{ target: 'b', learned: [{ name: 'h', type: 'a', prop: true }] }]);
 });
@@ -107,4 +109,141 @@ test('a step that holds a proof of its own keeps only its first line; instance h
 test('nothing recorded: no steps to show', () => {
   assert.equal(arrange([]), null);
   assert.equal(arrange(null), null);
+});
+
+test('cases inside a case are numbered under it: 1.1, 1.2, so two "case 1" are never confused', () => {
+  const g = goal('g', 'a ↔ b'), l = goal('l', 'a → b'), r = goal('r', 'b → a');
+  const l1 = goal('l1', 'b', [['h', 'p', true]]), l2 = goal('l2', 'b', [['h', 'q', true]]);
+  const proof = arrange([
+    step(0, 11, 'Lean.Parser.Tactic.constructor', 'constructor', [g], [l, r]),
+    step(12, 13, 'Lean.cdotTk', '·', [l, r], [l]),
+    step(14, 22, 'Lean.Parser.Tactic.rcases', 'rcases h', [l], [l1, l2]),
+    step(25, 26, 'Lean.cdotTk', '·', [l1, l2], [l1]),
+    step(27, 34, 'Lean.Parser.Tactic.exact', 'exact x', [l1], []),
+    step(25, 34, 'Lean.cdot', '· exact x', [l1, l2], [l2]),
+    step(37, 38, 'Lean.cdotTk', '·', [l2], [l2]),
+    step(39, 46, 'Lean.Parser.Tactic.exact', 'exact y', [l2], []),
+    step(37, 46, 'Lean.cdot', '· exact y', [l2], []),
+    step(14, 46, 'Lean.Parser.Tactic.tacticSeq', 'rcases h …', [l], []),
+    step(12, 46, 'Lean.cdot', '· rcases h …', [l, r], [r]),
+    step(49, 50, 'Lean.cdotTk', '·', [r], [r]),
+    step(51, 58, 'Lean.Parser.Tactic.exact', 'exact z', [r], []),
+    step(49, 58, 'Lean.cdot', '· exact z', [r], []),
+    step(0, 58, 'Lean.Parser.Term.byTactic', 'by …', [g], []),
+  ]);
+  assert.deepEqual(proof.steps.filter((s) => s.kind === 'case').map((s) => s.label), ['1', '1.1', '1.2', '2']);
+  // a case opens with what is known in it beyond what the proof started with
+  const opened = proof.steps.filter((s) => s.kind === 'case');
+  assert.deepEqual(opened[2].results, [{ target: 'b', learned: [{ name: 'h', type: 'q', prop: true }] }]);
+  assert.deepEqual(opened[0].results, [{ target: 'a → b', learned: [] }]);
+  // a step says which case it is in, so the cases it splits into can be numbered under it
+  assert.equal(proof.steps.find((s) => s.text === 'constructor').within, '');
+  assert.equal(proof.steps.find((s) => s.text === 'rcases h').within, '1');
+  assert.equal(proof.steps.find((s) => s.text === 'exact y').within, '1.2');
+});
+
+// ---------- each step said in plain words ----------
+const said = (kind, text, before, after) => arrange([step(0, Buffer.byteLength(text), kind, text, before, after)]).steps[0].says;
+
+test('in words: a split of an equivalence is "the two directions", read from the goals Lean recorded', () => {
+  const iff = goal('g', 'a = b ↔ c = d'), l = goal('l', 'a = b → c = d'), r = goal('r', 'c = d → a = b');
+  assert.equal(said('Lean.Parser.Tactic.constructor', 'constructor', [iff], [l, r]), 'prove the two directions separately');
+  const and = goal('g', 'p ∧ q'), p = goal('p', 'p'), q = goal('q', 'q');
+  assert.equal(said('Lean.Parser.Tactic.constructor', 'constructor', [and], [p, q]), 'prove the 2 parts separately');
+});
+
+test('in words: introducing says whether it is an object or an assumption', () => {
+  const all = goal('g', '∀ n, P n', []), one = goal('g1', 'P n', [['n', 'ℕ']]);
+  assert.equal(said('Lean.Parser.Tactic.intro', 'intro n', [all], [one]), 'take n arbitrary');
+  const imp = goal('g', 'a → b', []), then = goal('g1', 'b', [['h', 'a', true]]);
+  assert.equal(said('Lean.Parser.Tactic.intro', 'intro h', [imp], [then]), 'assume the premise, as h');
+});
+
+test('in words: taking a hypothesis apart names what it gives, or counts the cases', () => {
+  const g = goal('g', 'Q', [['h', '∃ n, P n', true]]), got = goal('g1', 'Q', [['n', 'ℕ'], ['hn', 'P n', true]]);
+  assert.equal(said('Lean.Parser.Tactic.rcases', 'rcases h with ⟨n, hn⟩', [g], [got]), 'from h, obtain n, hn');
+  const or = goal('g', 'Q', [['h', 'a ∨ b', true]]);
+  const l = goal('l', 'Q', [['h', 'a', true]]), r = goal('r', 'Q', [['h', 'b', true]]);
+  assert.equal(said('Lean.Parser.Tactic.rcases', 'rcases h with h | h', [or], [l, r]), 'h is an "or": 2 cases');
+});
+
+test('in words: an "or" of two "there exists" taken apart says why there are cases and what each provides', () => {
+  const g = goal('g', 'Q', [['H', '(∃ (n : ℤ), a n) ∨ ∃ (n : ℤ), b n', true]]);
+  const l = goal('l', 'Q', [['n', 'ℤ'], ['hn', 'a n', true]]), r = goal('r', 'Q', [['n', 'ℤ'], ['hn', 'b n', true]]);
+  assert.equal(said('Lean.Parser.Tactic.rcases', 'rcases H with (⟨n, hn⟩ | ⟨n, hn⟩)', [g], [l, r]), 'H is an "or": 2 cases; in each, it provides n, hn');
+  // what is to prove is the same in every case: it is not repeated per case
+  const proof = arrange([step(0, 30, 'Lean.Parser.Tactic.rcases', 'rcases H with (⟨n, hn⟩ | ⟨n, hn⟩)', [g], [l, r])]);
+  assert.deepEqual(proof.steps[0].results.map((x) => x.target), [null, null]);
+  // cases that are not from an "or" (here: a natural number is zero or a successor)
+  const nat = goal('g', 'P k', [['k', 'ℕ']]), z = goal('z', 'P 0', []), s = goal('s', 'P (m + 1)', [['m', 'ℕ']]);
+  assert.equal(said('Lean.Parser.Tactic.rcases', 'rcases k with _ | m', [nat], [z, s]), 'split k into 2 cases');
+});
+
+test('in words: automation says it is automatic, and where it works', () => {
+  const g = goal('g', 'P', [['h', 'a', true]]), g1 = goal('g1', 'P', [['h', 'b', true]]);
+  assert.equal(said('Lean.Parser.Tactic.simp', 'simp only [foo] at h', [g], [g1]), 'simplify h (automatic)');
+  assert.equal(said('Mathlib.Tactic.linarith', 'linarith', [g], []), 'linear arithmetic from the hypotheses (automatic)');
+  assert.equal(said('Lean.Parser.Tactic.simpa', 'simpa using h', [g], []), 'simplify, then conclude with the fact given (automatic)');
+});
+
+test('in words: common steps; a command not in the list, or a combination, is left as Lean wrote it', () => {
+  const g = goal('g', 'P'), g1 = goal('g1', 'Q'), g2 = goal('g2', 'R');
+  assert.equal(said('Lean.Parser.Tactic.exact', 'exact foo h', [g], []), 'conclude with');
+  assert.equal(said('Lean.Parser.Tactic.apply', 'apply foo', [g], [g1]), 'it is enough to prove the premises of');
+  assert.equal(said('Lean.Parser.Tactic.refine', 'refine ⟨_, ?_⟩', [g], [g1]), 'reduce to the gaps (?_) left in');
+  assert.equal(said('Lean.Parser.Tactic.left', 'left', [g], [g1]), 'prove the left alternative');
+  assert.equal(said('Lean.Parser.Tactic.induction', 'induction n with', [g], [g1, g2]), 'by induction on n');
+  assert.equal(said('x', 'frobnicate h', [g], [g1]), null);
+  assert.equal(said('Lean.Parser.Tactic.«tactic_<;>_»', 'constructor <;> simp', [g], []), null);
+  const claim = goal('g1', 'P', [['x', 'ℝ'], ['h', '0 < x', true]]);
+  assert.equal(said('Lean.Parser.Tactic.tacticHave__', 'have h : 0 < x := foo', [g], [claim]), 'intermediate claim h');
+});
+
+test('punctuation Lean records as a step of its own is not a step', () => {
+  const g = goal('g', 'P'), g1 = goal('g1', 'Q');
+  const proof = arrange([
+    step(0, 4, 'Lean.Parser.Tactic.simp', 'simp', [g], [g1]),
+    step(4, 5, '«;»', ';', [g1], [g1]),
+    step(6, 13, 'Lean.Parser.Tactic.exact', 'exact h', [g1], []),
+  ]);
+  assert.deepEqual(proof.steps.map((s) => s.text), ['simp', 'exact h']);
+});
+
+test('in words: an assumption taken apart on the way in does not call what it gives "arbitrary"', () => {
+  const g = goal('g', '(∃ k, a k) ∨ (∃ k, b k) → Q', []);
+  const l = goal('l', 'Q', [['k', 'ℤ'], ['H', 'a k', true]]), r = goal('r', 'Q', [['k', 'ℤ'], ['H', 'b k', true]]);
+  assert.equal(said('Lean.Parser.Tactic.rintro', 'rintro (⟨k, H⟩ | ⟨k, H⟩)', [g], [l, r]), 'assume the premise and split it into 2 cases');
+  const one = goal('g', '(∃ k, a k) → Q', []);
+  assert.equal(said('Lean.Parser.Tactic.rintro', 'rintro ⟨k, H⟩', [one], [l]), 'assume the premise; from it, obtain k, H');
+});
+
+// ---------- what a step cites ----------
+const names = (start, stop, name) => ({ start, stop, kind: '@const', text: '', name, before: [], after: [] });
+
+test('a step cites the declarations Lean resolved inside its own text; a rule used right to left says so', () => {
+  const g0 = goal('g0', 'P', [['h', 'a = b', true]]), g1 = goal('g1', 'P', [['h', 'a - b = 0', true]]);
+  const proof = arrange([
+    names(6, 17, 'sub_eq_zero'),
+    step(4, 17, 'null', '← sub_eq_zero', [g0], [g1]),
+    step(17, 18, '«]»', ']', [g1], [g1]),
+    step(0, 23, 'Lean.Parser.Tactic.rwSeq', 'rw [← sub_eq_zero] at h', [g0], [g1]),
+  ]);
+  assert.equal(proof.steps.length, 1); // what is cited is not a step
+  assert.equal(proof.steps[0].text, 'sub_eq_zero');
+  assert.equal(proof.steps[0].backwards, true);
+  assert.deepEqual(proof.steps[0].cites, ['sub_eq_zero']);
+});
+
+test('a step that holds other steps cites only what its own line names, each once', () => {
+  const g = goal('g', 'Q'), sub = goal('s', 'R'), g1 = goal('g1', 'Q', [['x', 'ℝ'], ['h', 'R', true]]);
+  const proof = arrange([
+    names(9, 12, 'Foo.bar'), names(13, 16, 'Foo.bar'),
+    names(27, 30, 'baz'),
+    step(21, 30, 'Lean.Parser.Tactic.exact', 'exact baz', [sub], []),
+    step(0, 30, 'Lean.Parser.Tactic.tacticHave__', 'have h : bar bar := by\n  exact baz', [g], [g1]),
+  ]);
+  const have = proof.steps.find((s) => s.text.startsWith('have'));
+  assert.deepEqual(have.cites, ['Foo.bar']);
+  assert.equal(have.backwards, false);
+  assert.deepEqual(proof.steps.find((s) => s.text === 'exact baz').cites, ['baz']);
 });

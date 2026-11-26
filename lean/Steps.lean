@@ -11,6 +11,10 @@ line of JSON:
   {"name": …, "steps": [{"start", "stop", "kind", "text", "before": [goal], "after": [goal]}]}
   goal = {"id", "case", "target", "hyps": [{"name", "type", "inst", "prop"}]}
 
+Among the steps, with kind "@const" and a "name": each identifier in the proof that Lean
+resolved to a declaration, with that declaration's full name. This is how a reader of
+`rw [sub_eq_zero]` can be shown what `sub_eq_zero` says.
+
 or {"name": …, "error": …}. Every recorded tactic step is given, containers included (a
 `by` block, a whole `rw [a, b]` next to its parts): lib/steps.js chooses what to show.
 -/
@@ -63,14 +67,23 @@ unsafe def main (args : List String) : IO Unit := do
   let stepsRef ← IO.mkRef (#[] : Array Json)
   for tree in trees do
     tree.visitM' (postNode := fun ctx info _ => do
-      let .ofTacticInfo step := info | return
       if ctx.parentDecl? != some decl then return
+      if let .ofTermInfo term := info then
+        if term.stx.isIdent then
+          if let (some range, some const) := (term.stx.getRange? (canonicalOnly := true), term.expr.getAppFn.constName?) then
+            stepsRef.modify (·.push <| Json.mkObj [
+              ("start", range.start.byteIdx), ("stop", range.stop.byteIdx),
+              ("kind", "@const"), ("text", ""), ("name", const.toString),
+              ("before", Json.arr #[]), ("after", Json.arr #[])])
+        return
+      let .ofTacticInfo step := info | return
       let some range := step.stx.getRange? (canonicalOnly := true) | return
-      -- as in the statements: a coercion is printed with the type it lands in
-      let options := ctx.options.setBool `pp.coercions.types true
+      -- as in the statements: a coercion is printed with the type it lands in, a bound variable with its type
+      let options := ctx.options.setBool `pp.coercions.types true |>.setBool `pp.funBinderTypes true
       let goals (mctx : MetavarContext) (ids : List MVarId) : IO Json := do
         try
-          return Json.arr (← ({ ctx with mctx, options }).runMetaM {} (ids.toArray.mapM goalJson))
+          -- names in full, as in the statements, whatever namespace the proof was written in
+          return Json.arr (← ({ ctx with mctx, options, currNamespace := .anonymous, openDecls := [] }).runMetaM {} (ids.toArray.mapM goalJson))
         catch _ => return Json.arr #[]
       let before ← goals step.mctxBefore step.goalsBefore
       let after ← goals step.mctxAfter step.goalsAfter
